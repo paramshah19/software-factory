@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "factory-dashboard",
+      "runtimeExecutable": "uv",
+      "runtimeArgs": ["run", "dashboard.py"],
+      "port": 8787
+    }
+  ]
+}
