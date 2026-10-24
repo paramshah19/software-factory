@@ -217,3 +217,18 @@ def test_owner_overrides_win_in_every_quality_and_retries_still_escalate(tmp_pat
     assert common.load_role("sf-writer").overridden is False  # an invalid effort is ignored
     # on another engine, an override that isn't a Claude model is that engine's own model name
     assert engines.Codex({"engine": "codex"}).model_for("my-codex-model") == "my-codex-model"
+
+
+def test_saved_defaults_reach_new_runs_budgets_and_notifications(tmp_path, monkeypatch):
+    cfg = tmp_path / "config.json"
+    cfg.write_text(json.dumps({"quality": "max", "budget": {"single": 4, "multi": 20}, "notify": False}), encoding="utf-8")
+    monkeypatch.setenv("SF_CONFIG", str(cfg))
+    rd = factory.create_run({"idea": "x"}, tmp_path)
+    assert json.loads((rd / "state.json").read_text(encoding="utf-8"))["inputs"]["quality"] == "max"
+    assert factory.create_run({"idea": "y", "quality": "lean"}, tmp_path).exists()  # an explicit choice still wins
+    assert factory.budget_for({"mode": "single"}) == 4 and factory.budget_for({"mode": "multi"}) == 20
+    assert factory.budget_for({"mode": "single", "budget_usd": 7}) == 7
+    called = []
+    monkeypatch.setattr(factory.subprocess, "Popen", lambda *a, **k: called.append(a))
+    factory.notify("t", "m")
+    assert called == []  # notifications off

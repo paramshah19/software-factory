@@ -417,7 +417,8 @@ class Handler(BaseHTTPRequestHandler):
         if url.path == "/favicon.ico":
             return self._send(204, b"", "image/x-icon")
         if url.path == "/api/info":  # lets scripts/sf.py confirm this is the factory it expects
-            return self._json({"app": "software-factory", "factory_dir": factory.posix(HERE), "engine": factory.engines.describe()})
+            return self._json({"app": "software-factory", "factory_dir": factory.posix(HERE), "engine": factory.engines.describe(),
+                               "default_quality": factory.default_quality()})
         if url.path == "/api/state":
             return self._json(snapshot(run))
         if url.path == "/api/doc":

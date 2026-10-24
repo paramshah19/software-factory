@@ -112,3 +112,18 @@ def test_doctor_reports_what_this_computer_can_build(sf, capsys, monkeypatch):
     rep = json.loads(capsys.readouterr().out)
     assert set(rep["can_build"]) >= {"static", "server", "cli", "api", "worker", "library", "multi", "mobile", "desktop", "godot"}
     assert rep["can_build"]["api"] == "yes"
+
+
+def test_setup_answers_become_saved_defaults(sf, tmp_path, monkeypatch):
+    fdir = tmp_path / "factory"
+    fdir.mkdir()
+    (fdir / "factory.py").write_text("# stand-in", encoding="utf-8")
+    brand = tmp_path / "brand.txt"
+    brand.write_text("Colours: deep green #0b6e4f and cream. Font: Inter. Tone: warm, short sentences.", encoding="utf-8")
+    assert sf.main(["configure", "--factory-dir", str(fdir), "--engine", "claude", "--quality", "lean", "--budget-single", "3",
+                    "--budget-multi", "900", "--notify", "off", "--brand-file", str(brand)]) == 0
+    cfg = sf.load_config()
+    assert cfg["quality"] == "lean" and cfg["budget"] == {"single": 3.0, "multi": 500.0} and cfg["notify"] is False
+    doc = (fdir / "always-use" / "brand.md").read_text(encoding="utf-8")
+    assert doc.startswith("# Brand rules") and "#0b6e4f" in doc
+    assert sf.main(["configure", "--quality", "max"]) == 0 and sf.load_config()["budget"]["single"] == 3.0  # other answers are kept

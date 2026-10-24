@@ -3,3 +3,5 @@
 __pycache__/
 runs/
 skills-library/
+always-use/*
+!always-use/README.md

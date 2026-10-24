@@ -90,6 +90,11 @@ def pick_model(role: Role, escalate: bool, quality: str = "balanced") -> tuple[s
     return (role.presets or {}).get(quality) or (role.model, role.effort)
 
 
+def default_quality() -> str:
+    q = engines.load_config().get("quality")
+    return q if q in QUALITY_CHOICES else "balanced"
+
+
 def run_quality(run) -> str:
     q = ((getattr(run, "state", None) or {}).get("inputs") or {}).get("quality")
     return q if q in QUALITY_CHOICES else "balanced"
@@ -352,6 +357,10 @@ def budget_for(state: dict) -> float:
         except ValueError:
             inp = None
     if inp is None:
+        saved = engines.load_config().get("budget")  # the owner's default from setup
+        if isinstance(saved, dict) and isinstance(saved.get(state.get("mode") or "multi"), (int, float)):
+            inp = saved[state.get("mode") or "multi"]
+    if inp is None:
         inp = DEFAULT_BUDGET.get(state.get("mode") or "multi", 45.0)
     return float(inp)
 
@@ -377,7 +386,7 @@ def parse_limit_reset(text: str, now: Optional[float] = None) -> Optional[float]
 
 def notify(title: str, msg: str) -> None:
     """Best-effort desktop balloon so a long run can tell you it needs you. Never raises."""
-    if os.environ.get("FACTORY_NOTIFY") == "0":
+    if os.environ.get("FACTORY_NOTIFY") == "0" or engines.load_config().get("notify") is False:
         return
     if os.name != "nt":
         clean = lambda x: str(x).replace('"', "'")[:120]
@@ -1042,7 +1051,7 @@ def create_run(inputs, runs_dir: Path = RUNS_DIR) -> Path:
              "reverse": ({"target": str(rev_in["target"]).strip()[:600], "scope": rev_in.get("scope") if rev_in.get("scope") in ("feature", "app") else "feature",
                           "links": checks.clean_links(rev_in.get("links"))} if rev_in and str(rev_in.get("target") or "").strip() else None),
              "photos": [], "skills": [], "force_mode": inputs.get("force_mode") if inputs.get("force_mode") in ("single", "multi") else None,
-             "quality": inputs.get("quality") if inputs.get("quality") in QUALITY_CHOICES else "balanced"}
+             "quality": inputs.get("quality") if inputs.get("quality") in QUALITY_CHOICES else default_quality()}
     try:
         if inputs.get("budget_usd") not in (None, ""):
             clean["budget_usd"] = max(0.0, min(500.0, float(inputs["budget_usd"])))
@@ -1251,8 +1260,8 @@ def main(argv=None) -> int:
     n.add_argument("--photo", action="append", default=[], help="a design reference photo (repeatable)")
     n.add_argument("--skill", action="append", default=[], help="a skill to use (repeatable)")
     n.add_argument("--mode", choices=["single", "multi"], help="skip the decider's choice")
-    n.add_argument("--quality", choices=list(QUALITY_CHOICES), default="balanced",
-                   help="lean (cheapest, for experiments), balanced (default) or max (the strongest models everywhere)")
+    n.add_argument("--quality", choices=list(QUALITY_CHOICES), default=None,
+                   help="lean (cheapest, for experiments), balanced or max (strongest models everywhere); default: your setup choice")
     n.add_argument("--budget", type=float, help="spending cap in dollars (0 = no cap); default 10 single / 45 full pipeline")
     sub.add_parser("stats", help="cost, time and outcome of every past run")
     dp = sub.add_parser("deploy", help="publish or package a finished run: netlify, vercel, github-pages or desktop")

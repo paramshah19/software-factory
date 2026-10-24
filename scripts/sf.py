@@ -222,6 +222,19 @@ def cmd_configure(a) -> int:
     cfg["host"] = a.host or cfg.get("host") or detect_host()
     if a.port:
         cfg["port"] = a.port
+    if a.quality:
+        cfg["quality"] = a.quality
+    for mode, val in (("single", a.budget_single), ("multi", a.budget_multi)):
+        if val is not None:
+            cfg.setdefault("budget", {})[mode] = max(0.0, min(500.0, val))
+    if a.notify:
+        cfg["notify"] = a.notify == "on"
+    if a.brand_file:  # becomes an always-use document: every agent of every run reads it
+        text = Path(a.brand_file).read_text(encoding="utf-8").strip()
+        dest = Path(cfg["factory_dir"]) / "always-use" / "brand.md"
+        dest.parent.mkdir(exist_ok=True)
+        dest.write_text("# Brand rules (every app follows these)\n\n" + text + "\n", encoding="utf-8")
+        cfg["brand_doc"] = dest.as_posix()
     if a.models:
         models = dict(cfg.get("models") or {})
         for pair in a.models.split(","):
@@ -605,6 +618,11 @@ def main(argv: Optional[list] = None) -> int:
     c.add_argument("--host", help="the agent that hosts the skills: claude-code, codex, gemini or other")
     c.add_argument("--factory-dir")
     c.add_argument("--port", type=int)
+    c.add_argument("--quality", choices=["lean", "balanced", "max"], help="the default Quality of new runs")
+    c.add_argument("--budget-single", type=float, help="default spending cap in dollars for single-agent runs (0 = no cap)")
+    c.add_argument("--budget-multi", type=float, help="default spending cap in dollars for full-pipeline runs (0 = no cap)")
+    c.add_argument("--notify", choices=["on", "off"], help="desktop notifications when a run needs you")
+    c.add_argument("--brand-file", help="a text file with brand rules (colours, fonts, tone) every app must follow")
     c.add_argument("--models", help="strong=MODEL,standard=MODEL,fast=MODEL (non-Claude engines; empty = the agent's default)")
     c.add_argument("--command", help='custom engine: JSON list, the non-interactive command, e.g. \'["gemini", "--yolo"]\'')
     c.add_argument("--prompt", choices=["stdin", "arg", "file"], help="custom engine: how the prompt is passed (file = {prompt_file} in --command)")
@@ -639,8 +657,8 @@ def main(argv: Optional[list] = None) -> int:
     i.add_argument("--skill", action="append", default=[])
     i.add_argument("--mode", choices=["single", "multi"])
     i.add_argument("--budget", type=float)
-    i.add_argument("--quality", choices=["lean", "balanced", "max"], default="balanced",
-                   help="lean = cheapest (experiments), balanced = default, max = strongest models everywhere")
+    i.add_argument("--quality", choices=["lean", "balanced", "max"], default=None,
+                   help="lean = cheapest (experiments), balanced, max = strongest models everywhere; default: your setup choice")
     i.add_argument("--no-open", action="store_true")
     st = sub.add_parser("status", parents=[common])
     st.add_argument("run", nargs="?")

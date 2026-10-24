@@ -1,64 +1,67 @@
 ---
 name: software-factory-setup
-description: One-time setup of the Software Factory (a pipeline of AI agents that turns an idea into a tested app, with a live dashboard) on whatever coding agent the user runs (Claude Code, Codex, Gemini CLI, Grok, opencode or any agent with a non-interactive command line). Use when the user says "set up the software factory", "install the software factory", runs /software-factory-setup, or has just cloned the software-factory repo.
+description: One-time setup of the Software Factory (a pipeline of AI agents that turns an idea into a tested product, with a live dashboard) on whatever coding agent the user runs (Claude Code, Codex, Gemini CLI, Grok, opencode or any agent with a non-interactive command line). Welcomes the user, explains what it is, asks a few questions to personalise it (which agent does the work, models and effort per agent, quality, spending caps, brand rules), then shows how to run it. Use when the user says "set up the software factory", "install the software factory", runs /software-factory-setup, or has just cloned the software-factory repo.
 ---
 
 # Software Factory setup
 
-You are setting up the Software Factory for the user, on the agent you are running in. When you finish, the user has: the factory's 20 agents checked and working on their agent, the dashboard running, and the `/software-factory-idea` skill installed. Do the steps in order. Explain what you are doing in plain words (the user may not be technical). Never claim a step worked unless its command said so.
+You are setting up the Software Factory for the user, in four parts: **1. Welcome, 2. What it is, 3. Personalise it, 4. How to run it.** The user may not be technical: plain words, short messages, no jargon without a one-line explanation. Do the technical work yourself, quietly, and only tell the user what matters to them. Never claim a step worked unless its command said so.
 
 `SF` below means: `uv run --no-project python "<FACTORY>/scripts/sf.py"`, where `<FACTORY>` is the factory folder (absolute path, forward slashes). Every `SF` command accepts `--json`.
 
-## 1. Find or get the factory
-- If the current folder (or a parent) contains `factory.py` and `scripts/sf.py`, that is `<FACTORY>`.
-- Otherwise clone it: `git clone https://github.com/paramshah19/software-factory "<HOME>/software-factory"` (`<HOME>` = the user's home folder). Tell the user where it went.
+---
 
-## 2. Check the machine
-Run `SF doctor --json`.
-- `git` or `uv` missing: show the user the `install_steps` from the output and ask them to run them (installing system tools is their call), then run `doctor` again. Don't continue without both.
-- Note the operating system and which agent command lines were found.
-- Show what this computer can build (`can_build`): web pages and web apps, command-line tools, APIs, bots and background workers, libraries, multi-service systems, phone apps, desktop apps and Godot games. For each one marked as missing, say in one line what it needs (phone apps: Node.js; Godot games: Godot 4) and that installing it is optional and their call. The factory only offers the kinds this computer can build.
+## Part 1: Welcome
 
-## 3. Choose the engine (the agent that runs the factory's stations)
-Use the agent you are running in, unless the user asked for a different one:
-- **You are Claude Code** → `SF configure --engine claude --host claude-code`
-- **You are Codex** → `SF configure --engine codex --host codex`. Codex picks its own model by default. If `check` (step 6) says the model is not supported, ask the user which Codex models their plan has and set them: `--models "strong=<best>,standard=<everyday>,fast=<cheapest>"`.
-- **Any other agent** (Gemini CLI, Grok, opencode, Qwen Code, Cursor's agent, Aider...) → `custom`. Work out YOUR OWN non-interactive command: run `<your-cli> --help` and find the mode that takes a prompt, works without asking for approval, can read/write files and run shell commands in its working folder, and exits when done. Then, for example:
-  `SF configure --engine custom --host other --label "Gemini CLI" --command '["gemini", "--yolo"]' --prompt stdin --model-args '["-m", "{model}"]'`
-  - `--prompt stdin` (the prompt is piped in), `arg` (added as the last argument) or `file` (put `{prompt_file}` inside `--command`).
-  - Placeholders you can use inside the lists: `{model}`, `{effort}`, `{cwd}`, `{run_dir}`, `{prompt_file}`, `{prompt}`.
-  - If your agent has known skills folders, use `--host gemini` (for Gemini CLI) or pass `--dir` in step 7.
-- Tell the user, in one line, what this choice means: Claude Code is the most complete (each station has its own tool limits, and costs are shown in dollars). On Codex and other agents the stations are not limited per tool, the hidden tests are protected by instruction only, and cost shows as "not reported".
+Greet the user in two or three warm, short sentences: they are about to set up their own software factory, it takes about ten minutes, and you will ask a few questions so it works the way they like.
 
-## 4. Install the factory's parts
-Run `SF prepare` (installs the Python packages, plus a browser for the screenshot checks if the machine has no Edge or Chrome: about 150 MB, once). It can take a few minutes.
+Meanwhile, behind the scenes:
+1. **Find the factory.** If the current folder (or a parent) has `factory.py` and `scripts/sf.py`, that is `<FACTORY>`. Otherwise clone it: `git clone https://github.com/paramshah19/software-factory "<HOME>/software-factory"` (`<HOME>` = the user's home folder) and tell them where it went.
+2. **Check the computer:** `SF doctor --json`. If `git` or `uv` is missing, show the user the `install_steps` from the output, ask them to run them (installing tools is their call), run `doctor` again, and don't continue without both. Keep the rest of the output for Parts 2 and 3: the operating system, the agent command lines found (`agent_command_lines`) and what this computer can build (`can_build`).
 
-## 5. Show the agents, and let the user choose their models
-Run `SF agents` and show the user the list as a table: each agent's job, model and effort on their engine. Explain in one line: each agent is a set of instructions in `agents/<name>.md`. The factory starts a fresh one for each step and checks its work.
+## Part 2: What it is
 
-Then ask ONE question: "These defaults balance cost and quality. Do you want to change the model or effort of any agent?" Explain the choices simply:
-- **Model** (on Claude Code): `claude-opus-5-5` (strongest, about twice the price of Sonnet), `claude-sonnet-5-5` (the everyday default), `claude-haiku-5-5` (fastest and cheapest, for simple jobs). On another engine, use that agent's own model names.
-- **Effort**: `low`, `medium`, `high`, `xhigh`, `max`. Higher means more thinking: better on hard work, slower, and more expensive.
-- Each run also has a **Quality** choice (Lean / Balanced / Max) that shifts the defaults. An agent the user sets here keeps their choice in every Quality.
+Explain it in under 12 short lines, in your own words, using what `doctor` found:
+- **An idea in, a tested product out.** They describe what they want; a team of about 20 specialist AI agents (researcher, spec writer, designer, planner, builders, reviewers, security checker, report writer...) each do one job.
+- **It doesn't take the agents' word for it.** A driver program checks every step itself with real tests, a real browser and screenshots, and sends work back until it passes.
+- **A live dashboard** shows every agent at work. Nothing opens terminal windows. When the factory needs a decision (pick an idea, approve the plan, review the app), it shows up under **Needs you**.
+- **What it can build on this computer**: list the kinds `can_build` says "yes" to, in plain words (websites and web apps, command-line tools, APIs, bots, libraries, systems of several services, phone apps, desktop apps, Godot games). For each kind it can't build yet, one line on what it needs (phone apps: Node.js; Godot games: Godot 4), and that installing it is optional.
+- **Costs**: it runs on their own agent's plan. A small app is a few dollars of usage, a big one more; they choose how much quality to buy (Part 3).
 
-For each change the user asks for, run `SF agents set <agent> --model <model> --effort <effort>` (either option alone is fine). To undo: `SF agents reset <agent>`, or `SF agents reset all`. Show the final table. If they don't want changes, move on. Their choices are saved in their own config, so updating the factory never overwrites them, and they can rerun this command any time.
+## Part 3: Personalise it
 
-## 6. Prove every agent answers
-Tell the user: "This sends one tiny test message per model and effort level, using a little of your plan." Then run `SF check`.
-- Every line must say `ok`. For a `FAIL`, read the message, fix the cause (wrong model name → `configure --models`; wrong command → `configure --command`; not signed in → ask the user to sign in to their agent themselves) and run `check` again.
-- Don't continue until it passes, unless the user says so. If they do, record it in your summary.
+First run `SF agents` so you can show the agents. Then ask ALL the questions in ONE message, numbered, each with its default in [brackets], and tell the user they can answer "defaults" or only the numbers they want to change:
 
-## 7. Install the skills
-Run `SF install-skills` (add `--dir "<your skills folder>"` if your agent's skills folder is not known). It copies `software-factory-setup` and `software-factory-idea` into the agent's skills folder and writes the shortcut `<HOME>/.software-factory/sf.py`, which the idea skill uses. If it says the folder is unknown, find where your agent loads skills from and rerun it with `--dir`.
+1. **Which agent does the work?** [the one you are, if `doctor` found its command line]. List the other agents `doctor` found. Say in one line that Claude Code is the most complete (cost in dollars, a spending cap, and safety limits per agent); on others, cost shows as "not reported" and the safety limits are weaker.
+2. **Default quality of a run** [Balanced]: **Lean** (cheapest, for experiments), **Balanced** (strong where it matters), **Max** (strongest models everywhere, costs most). They can still pick per run.
+3. **Spending cap per run** [single-agent $10, full pipeline $45; 0 = no cap]. Only meaningful with Claude Code.
+4. **Models and effort per agent** [keep the defaults]. Show `SF agents` as a short table (agent, job, model, effort). Explain: **Model** on Claude Code is `claude-opus-5-5` (strongest, about twice the price of Sonnet), `claude-sonnet-5-5` (the everyday default) or `claude-haiku-5-5` (fastest, cheapest, for simple jobs); on another agent, its own model names. **Effort** is `low`, `medium`, `high`, `xhigh` or `max`: more thinking, better on hard work, slower and costlier. They can answer like "planner: opus, high; writer: haiku".
+5. **Brand rules every app should follow** [none]: colours, fonts, tone of voice, anything they always want.
+6. **Desktop notifications when a run needs you** [on].
 
-## 8. Connections (optional, for publishing apps later)
-Run `SF connections` and explain the result simply: which publishing options are ready (Netlify, Vercel, GitHub Pages, a desktop app) and what the user would need to do for the others. Signing in is always the user's job. Never type, ask for, read or print a password, token or key.
+Then apply the answers, telling the user briefly what you're doing:
+- **Engine** (question 1):
+  - Claude Code → `SF configure --engine claude --host claude-code`
+  - Codex → `SF configure --engine codex --host codex`. Codex picks its own model; if the check below says a model isn't supported, ask which Codex models their plan has and add `--models "strong=<best>,standard=<everyday>,fast=<cheapest>"`.
+  - Any other agent → `custom`. Work out YOUR OWN non-interactive command: run `<your-cli> --help` and find the mode that takes a prompt, runs without asking for approval, can edit files and run shell commands in its working folder, and exits when done. For example: `SF configure --engine custom --host other --label "Gemini CLI" --command '["gemini", "--yolo"]' --prompt stdin --model-args '["-m", "{model}"]'` (`--prompt stdin`, `arg`, or `file` with `{prompt_file}` in the command; placeholders: `{model}`, `{effort}`, `{cwd}`, `{run_dir}`, `{prompt_file}`, `{prompt}`; use `--host gemini` for Gemini CLI).
+- **Defaults** (questions 2, 3, 6): `SF configure --quality <q> --budget-single <n> --budget-multi <n> --notify <on|off>` (only the options they changed).
+- **Agents** (question 4): `SF agents set <agent> --model <model> --effort <effort>` for each change (either option alone is fine; `SF agents reset <agent|all>` to undo).
+- **Brand** (question 5): write their rules to a temporary text file in their words, then `SF configure --brand-file <that file>`. It becomes a document every agent of every run reads.
+- **Install the factory's parts:** `SF prepare` (Python packages, plus a browser for screenshot checks if they have no Edge or Chrome: about 150 MB, once). It can take a few minutes.
+- **Prove every agent answers:** tell them "this sends one tiny test message per model and effort level, using a little of your plan", then `SF check`. Every line must say `ok`. For a `FAIL`, fix the cause (wrong model name → `SF agents set` or `--models`; wrong command → `--command`; not signed in → ask them to sign in to their agent themselves) and run it again.
+- **Install the skills:** `SF install-skills` (add `--dir "<your skills folder>"` if it says your agent's folder is unknown). This also writes the shortcut `<HOME>/.software-factory/sf.py` that the idea skill uses.
+- **Publishing options:** `SF connections`. Note which ways of putting apps online are ready (their Netlify, Vercel, GitHub or Render accounts and connectors). Never type, ask for, read or print a password, token or key; signing in is always theirs.
 
-## 9. Start the dashboard
-Run `SF dashboard open`. It starts the dashboard in the background with no terminal window and opens it in the browser at `http://127.0.0.1:8787`. Tell the user: the factory's own output is under **Factory console**, and each agent's output under **Show live output**. Nothing opens a terminal window.
+End Part 3 with a short summary of their factory: the agent doing the work, default quality, spending caps, any agents they changed, brand rules saved or not, and notifications on or off.
 
-## 10. Hand off
-Short summary for the user:
-- What is set up (engine, number of agents checked, where the skills went, the dashboard address).
-- How to use it: `/software-factory-idea <your idea>` (or however their agent invokes skills).
-- **What I did NOT verify:** anything that failed or was skipped. Write "nothing" only if every step passed.
+## Part 4: How to run it
+
+1. Start the dashboard: `SF dashboard open`. It runs in the background (no terminal window) and opens in their browser at the address it prints.
+2. Show them how to use it, briefly:
+   - **Start something:** `/software-factory-idea <your idea>` from any folder (or the **New run** button on the dashboard). For example: `/software-factory-idea a habit tracker that shows honest streaks`. Add "cheap" for a Lean run or "best possible" for Max. They can also give links to products they like, design photos, a whole spec, say "give me ideas", or "recreate this feature from that product".
+   - **Watch it:** the dashboard opens at the run. **Show live output** shows each agent at work; **Factory console** shows the factory itself.
+   - **Decide:** decisions appear under **Needs you** (the tab title changes too). They can also just answer in chat, like "approve it".
+   - **Outside services:** if an app uses an AI model, payments (test mode) or email, it works in demo mode first. They add real keys later on the dashboard's **Your app** panel, never in the chat.
+   - **Put it online:** after they approve a finished app, the **Deploy** panel offers what fits it, using their own accounts.
+   - **Change any setting later:** run `/software-factory-setup` again (it keeps what they chose unless they change it).
+3. Finish with one line: **What I did NOT verify:** anything that failed or was skipped during setup. Write "nothing" only if every step passed.

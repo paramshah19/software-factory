@@ -848,13 +848,14 @@ async function openNewRun() {
       <label>Reference photos for the design <small>(up to 8)</small><input type="file" id="nr-photos" accept="image/*" multiple></label>
       <label>Reference links <small>(one per line)</small><textarea id="nr-ref"></textarea></label>
       <label>Skills you want considered <small>(comma separated; the skill agent still checks each one fits)</small><input class="fld" id="nr-skills" list="skill-list" placeholder="e.g. frontend-design, ui-ux-pro-max"><datalist id="skill-list">${skills.map(s => `<option value="${esc(s)}">`).join("")}</datalist></label>
-      <label>Spending cap in dollars <small>(blank = default: 10 single agent, 45 full pipeline; 0 = no cap)</small><input class="fld" id="nr-budget" type="number" min="0" step="1" placeholder="default"></label>
-      <label>Quality <small>(Lean for experiments; Max uses the strongest models everywhere and costs most)</small><select id="nr-quality"><option value="balanced">Balanced (default)</option><option value="lean">Lean: cheapest</option><option value="max">Max: strongest</option></select></label>
+      <label>Spending cap in dollars <small>(blank = your default from setup; 0 = no cap)</small><input class="fld" id="nr-budget" type="number" min="0" step="1" placeholder="default"></label>
+      <label>Quality <small>(Lean for experiments; Max uses the strongest models everywhere and costs most)</small><select id="nr-quality"><option value="balanced">Balanced</option><option value="lean">Lean: cheapest</option><option value="max">Max: strongest</option></select></label>
       <label>Build mode<select id="nr-mode"><option value="">Let the decider choose</option><option value="single">Single agent</option><option value="multi">Full pipeline</option></select></label></div>
     <p class="hint">Your always-use documents (brand colours, design rules) apply automatically. <a id="nr-always">Edit them</a>. The skill agent also looks at your skills library and the skills installed here, and uses only what fits. <a id="nr-skills-link">Manage skills</a></p>
     <div class="btns"><button class="btn go" id="nr-go">Start run</button></div><div class="err" id="nr-err"></div></div>`);
   $("#nr-always").onclick = openAlways;
   $("#nr-skills-link").onclick = openSkills;
+  fetch("/api/info").then(r => r.json()).then(i => { if (i.default_quality && $("#nr-quality")) $("#nr-quality").value = i.default_quality; }).catch(() => {});
   $("#nr-rev").onchange = e => { const b = $("#nr-revbox"); b.hidden = !e.target.checked; b.style.display = e.target.checked ? "flex" : "none"; };
   $("#nr-specfile").onchange = async e => { if (e.target.files[0]) $("#nr-spec").value = await readFile(e.target.files[0], false); };
   $("#nr-go").onclick = async () => {

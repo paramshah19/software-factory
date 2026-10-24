@@ -30,7 +30,13 @@ Open your coding agent in that folder and run the setup skill:
 
 (Claude Code and Codex find the skill in this folder by themselves. In another agent, say: "read `skills/software-factory-setup/SKILL.md` and follow it".)
 
-Setup checks your machine, picks your agent as the engine, installs what the factory needs, shows all 20 agents and proves each one answers, installs both skills for your agent, checks what you could publish to later, and opens the dashboard. Then, from any folder:
+Setup has four parts:
+1. **Welcome**, while it quietly checks your computer.
+2. **What it is**, including what your computer can build.
+3. **Personalise it**: which agent does the work, the default quality and spending caps, each agent's model and effort, brand rules every app follows, and notifications. Then it installs everything and proves every agent answers.
+4. **How to run it**, with the dashboard open.
+
+Then, from any folder:
 
 ```
 /software-factory-idea a habit tracker that shows honest streaks
