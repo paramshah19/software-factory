@@ -14,7 +14,11 @@ Setup (once):
     sf.py connections                 what deploying can use (Claude connectors, GitHub / Netlify / Vercel command lines)
 
 Every day:
-    sf.py idea "a habit tracker"      start a run, start the dashboard hidden if needed, open it in the browser
+    sf.py start                       the one-click way in: install on first start, start the dashboard, open it as an app window
+    sf.py start --browser --phone     ...in your normal browser, with the phone view on (same Wi-Fi, PIN)
+    sf.py shortcut                    put a Software Factory icon on your Desktop (double-click = sf.py start)
+    sf.py phone on|off|status         the dashboard on your phone; sf.py awake on|off|status keeps the computer awake
+    sf.py idea "a habit tracker"      start a run, start the dashboard hidden if needed, open it
     sf.py dashboard start|stop|status|open
     sf.py status [RUN]                where a run is / what is waiting on you
     sf.py factory <args>              pass anything else to factory.py (approve, reject, decide, run, stats, deploy)
@@ -185,7 +189,7 @@ def cmd_doctor(a) -> int:
     report = {
         "system": f"{platform.system()} {platform.release()} ({platform.machine()})",
         "python": sys.version.split()[0],
-        "factory_dir": fdir.as_posix(), "factory_found": (fdir / "factory.py").exists(),
+        "factory_dir": fdir.as_posix(), "factory_found": (fdir / "src" / "factory.py").exists(),
         "config": config_path().as_posix() if config_path().exists() else "not configured yet",
         "engine": cfg.get("engine") or "not chosen", "host": cfg.get("host") or detect_host(),
         "tools": tools, "agent_command_lines": agents,
@@ -193,7 +197,7 @@ def cmd_doctor(a) -> int:
         "dashboard": f"running at http://127.0.0.1:{port()}" if status == 200 and info.get("app") == "software-factory" else "not running",
     }
     if report["factory_found"]:
-        sys.path.insert(0, str(fdir))
+        sys.path.insert(0, str(fdir / "src"))
         import kinds  # noqa: E402  (the factory's own list of product kinds and what each needs)
         report["can_build"] = {k: ("yes" if not why else why) for k, why in kinds.machine_kinds().items()}
     missing = [t for t, v in tools.items() if not v["found"]]
@@ -213,8 +217,8 @@ def cmd_doctor(a) -> int:
 def cmd_configure(a) -> int:
     cfg = load_config()
     cfg["factory_dir"] = Path(a.factory_dir).resolve().as_posix() if a.factory_dir else cfg.get("factory_dir") or REPO.as_posix()
-    if not (Path(cfg["factory_dir"]) / "factory.py").exists():
-        print(f"no factory.py in {cfg['factory_dir']}")
+    if not (Path(cfg["factory_dir"]) / "src" / "factory.py").exists():
+        print(f"no src/factory.py in {cfg['factory_dir']}")
         return 1
     if a.engine:
         cfg["engine"] = a.engine
@@ -229,10 +233,12 @@ def cmd_configure(a) -> int:
             cfg.setdefault("budget", {})[mode] = max(0.0, min(500.0, val))
     if a.notify:
         cfg["notify"] = a.notify == "on"
+    if a.open_as:
+        cfg["open_as"] = a.open_as
     if a.brand_file:  # becomes an always-use document: every agent of every run reads it
         text = Path(a.brand_file).read_text(encoding="utf-8").strip()
-        dest = Path(cfg["factory_dir"]) / "always-use" / "brand.md"
-        dest.parent.mkdir(exist_ok=True)
+        dest = Path(cfg["factory_dir"]) / "workspace" / "always-use" / "brand.md"
+        dest.parent.mkdir(parents=True, exist_ok=True)
         dest.write_text("# Brand rules (every app follows these)\n\n" + text + "\n", encoding="utf-8")
         cfg["brand_doc"] = dest.as_posix()
     if a.models:
@@ -297,9 +303,9 @@ def factory_py(args: list, timeout: int = 3600, capture: bool = True) -> tuple[i
         return 1, "the factory's packages are not installed: run `sf.py prepare` first"
     env = dict(os.environ, SF_CONFIG=str(config_path()))
     if not capture:
-        return subprocess.call([str(py), str(fdir / "factory.py"), *args], cwd=str(fdir), env=env), ""
+        return subprocess.call([str(py), str(fdir / "src" / "factory.py"), *args], cwd=str(fdir), env=env), ""
     try:
-        p = subprocess.run([str(py), str(fdir / "factory.py"), *args], cwd=str(fdir), capture_output=True, text=True,
+        p = subprocess.run([str(py), str(fdir / "src" / "factory.py"), *args], cwd=str(fdir), capture_output=True, text=True,
                            encoding="utf-8", errors="replace", timeout=timeout, env=env, creationflags=NO_WINDOW)
         return p.returncode, (p.stdout or "") + (p.stderr or "")
     except subprocess.TimeoutExpired:
@@ -339,7 +345,7 @@ def cmd_agents(a) -> int:
             mine[a.name] = entry
         cfg["agents"] = mine
         save_config(cfg)
-    sys.path.insert(0, str(fdir))
+    sys.path.insert(0, str(fdir / "src"))
     os.environ["SF_CONFIG"] = str(config_path())
     import common  # noqa: E402  (the factory's own role parser, which applies the overrides)
     import engines  # noqa: E402
@@ -488,7 +494,44 @@ def start_hidden(args: list, cwd: Path, log: Path) -> int:
     return subprocess.Popen(args, start_new_session=True, **kw).pid
 
 
-def ensure_dashboard(open_browser: bool = False, path: str = "/") -> tuple[int, dict]:
+def browser_exe() -> Optional[str]:
+    """A Chromium-family browser (Edge, Chrome, Chromium) that can open the dashboard as its own app window, or None."""
+    names = ("msedge", "chrome", "google-chrome", "google-chrome-stable", "chromium", "chromium-browser", "microsoft-edge")
+    if WIN:
+        roots = [os.environ.get(k) for k in ("ProgramFiles(x86)", "ProgramFiles", "LocalAppData")]
+        for root in filter(None, roots):
+            for rel in (r"Microsoft\Edge\Application\msedge.exe", r"Google\Chrome\Application\chrome.exe"):
+                if (Path(root) / rel).exists():
+                    return str(Path(root) / rel)
+    elif sys.platform == "darwin":
+        for app in ("Microsoft Edge", "Google Chrome", "Chromium"):
+            exe = Path(f"/Applications/{app}.app/Contents/MacOS/{app}")
+            if exe.exists():
+                return str(exe)
+    for n in names:
+        exe = shutil.which(n)
+        if exe:
+            return exe
+    return None
+
+
+def open_window(url: str, mode: Optional[str] = None) -> str:
+    """Open the dashboard: as its own app window (no tabs or address bar) or in your normal browser. Returns what it did.
+    mode: "app" or "browser"; default from `sf.py configure --open-as`, else app (falls back to the browser when there is no Chromium browser)."""
+    mode = mode or load_config().get("open_as") or "app"
+    exe = browser_exe() if mode == "app" else None
+    if exe:
+        try:
+            subprocess.Popen([exe, f"--app={url}", "--window-size=1360,900"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                             stdin=subprocess.DEVNULL, start_new_session=not WIN)
+            return "app window"
+        except OSError:
+            pass
+    webbrowser.open(url)
+    return "browser"
+
+
+def ensure_dashboard(open_browser: bool = False, path: str = "/", extra_args: Optional[list] = None) -> tuple[int, dict]:
     st, note = dashboard_status(), None
     if st["running"] and not st["ours"]:
         return 1, {"error": f"port {port()} is used by another Software Factory dashboard ({st['factory_dir']}). "
@@ -508,7 +551,7 @@ def ensure_dashboard(open_browser: bool = False, path: str = "/") -> tuple[int, 
         py = venv_python(fdir)
         if not py:
             return 1, {"error": "the factory's packages are not installed: run `sf.py prepare` first"}
-        env_args = [str(py), str(fdir / "dashboard.py"), "--port", str(port())]
+        env_args = [str(py), str(fdir / "src" / "dashboard.py"), "--port", str(port()), *(extra_args or [])]
         os.environ["SF_CONFIG"] = str(config_path())  # the dashboard and every run it starts use this config
         pid = start_hidden(env_args, fdir, HOME_DIR / "dashboard.log")
         (HOME_DIR / "dashboard.pid").write_text(str(pid), encoding="utf-8")
@@ -524,8 +567,8 @@ def ensure_dashboard(open_browser: bool = False, path: str = "/") -> tuple[int, 
     if note:
         st["note"] = note
     if open_browser:
-        webbrowser.open(st["url"] + path)
         st["opened"] = st["url"] + path
+        st["opened_in"] = open_window(st["opened"])
     return 0, st
 
 
@@ -558,6 +601,154 @@ def cmd_dashboard(a) -> int:
     return rc
 
 
+# --------------------------------------------------------------------------- start (the one-click way in), shortcut, phone, awake
+
+
+def ensure_prepared() -> tuple[bool, str]:
+    """First start only: install the factory's Python packages. After that this is instant."""
+    fdir = factory_dir()
+    if venv_python(fdir):
+        return True, ""
+    if not shutil.which("uv"):
+        return False, "uv is missing. Install it from https://docs.astral.sh/uv/getting-started/installation/ and start again."
+    print("First start: installing the factory's packages (about a minute, once)...", flush=True)
+    rc, text = run(["uv", "sync"], fdir, 900)
+    if rc != 0 or not venv_python(fdir):
+        return False, "could not install the packages:\n" + text.strip()[-600:]
+    return True, ""
+
+
+def phone_info() -> dict:
+    status, r = http("/api/remote", timeout=5)
+    if status != 200 or not r.get("on"):
+        return {"on": False}
+    return {"on": True, "addresses": r.get("urls") or [], "pin": r.get("pin"), "link": r.get("link"), "note": r.get("note") or ""}
+
+
+def cmd_start(a) -> int:
+    """One command (and one click, through the launchers) from nothing to the dashboard on screen."""
+    ok, why = ensure_prepared()
+    if not ok:
+        print(why)
+        return 1
+    extra = (["--phone"] if a.phone else []) + (["--awake"] if a.awake else [])
+    rc, st = ensure_dashboard(extra_args=extra)
+    if rc:
+        out(st, a.json)
+        return rc
+    if not st.get("started"):   # it was already running: apply the options through its own API
+        if a.phone:
+            http("/api/remote", {"on": True})
+        if a.awake:
+            http("/api/awake", {"on": True, "mode": "runs"})
+    opened = None if a.no_open else open_window(st["url"], "browser" if a.browser else "app" if a.app else None)
+    info = {"dashboard": st["url"], "opened_in": opened or "not opened", "started_now": bool(st.get("started"))}
+    if a.phone:
+        info["phone"] = phone_info()
+    if a.json:
+        out(info, True)
+        return 0
+    print(f"Software Factory is {'running' if not st.get('started') else 'started'}: {st['url']}" + (f" (opened as {opened})" if opened else ""))
+    ph = info.get("phone")
+    if ph and ph.get("on") and ph.get("addresses"):
+        print(f"Phone view (same Wi-Fi): open {ph['addresses'][0]} and type the PIN {ph['pin']}, or scan the QR code in Phone & power.")
+    elif ph and ph.get("on"):
+        print(ph.get("note") or "Phone view is on, but no local network address was found.")
+    return 0
+
+
+def desktop_dir(custom: Optional[str] = None) -> Path:
+    if custom:
+        return Path(custom).expanduser()
+    if WIN:   # the real Desktop folder (it moves when OneDrive backs it up)
+        rc, text = run(["powershell", "-NoProfile", "-Command", "[Environment]::GetFolderPath('Desktop')"], Path.cwd(), 30)
+        lines = text.strip().splitlines()
+        if rc == 0 and lines and Path(lines[-1]).is_dir():
+            return Path(lines[-1])
+    return Path.home() / "Desktop"
+
+
+def cmd_shortcut(a) -> int:
+    """A Desktop icon that starts the factory with one double-click."""
+    target = factory_dir() / ("Start Software Factory.cmd" if WIN else "Start Software Factory.command")
+    desk = desktop_dir(a.dir)
+    if not target.exists():
+        print(f"launcher not found: {target}")
+        return 1
+    if not desk.is_dir():
+        print(f"no Desktop folder at {desk}: pass --dir FOLDER")
+        return 1
+    if WIN:
+        lnk = desk / "Software Factory.lnk"
+        q = lambda p: str(p).replace("'", "''")
+        script = (f"$s=(New-Object -ComObject WScript.Shell).CreateShortcut('{q(lnk)}');$s.TargetPath='{q(target)}';"
+                  f"$s.WorkingDirectory='{q(target.parent)}';$s.WindowStyle=7;$s.Description='Start the Software Factory';$s.Save()")
+        rc, text = run(["powershell", "-NoProfile", "-Command", script], Path.cwd(), 60)
+        made = lnk
+        if rc != 0 or not lnk.exists():
+            print("could not create the shortcut: " + text.strip()[-300:])
+            return 1
+    elif sys.platform == "darwin":
+        made = desk / "Software Factory.command"
+        made.unlink(missing_ok=True)
+        made.symlink_to(target)
+    else:
+        made = desk / "Software Factory.desktop"
+        made.write_text("[Desktop Entry]\nType=Application\nName=Software Factory\nComment=Start the Software Factory\n"
+                        f'Exec=bash "{target}"\nPath={target.parent}\nTerminal=false\n', encoding="utf-8")
+        made.chmod(0o755)
+    out({"shortcut": made.as_posix(), "next": "Double-click it to start the Software Factory."}, a.json)
+    return 0
+
+
+def cmd_phone(a) -> int:
+    """Phone view on/off: the dashboard on your phone, same Wi-Fi, PIN protected."""
+    if a.action == "on":
+        ok, why = ensure_prepared()
+        if not ok:
+            print(why)
+            return 1
+        rc, st = ensure_dashboard(extra_args=["--phone"])
+        if rc:
+            out(st, a.json)
+            return rc
+        http("/api/remote", {"on": True})
+    elif a.action == "off":
+        http("/api/remote", {"on": False})
+    info = phone_info()
+    if a.json:
+        out(info, True)
+    elif not info["on"]:
+        print("Phone view is off.")
+    else:
+        print(f"Phone view is on. Same Wi-Fi: open {(info['addresses'] or ['(no network found)'])[0]} and type the PIN {info['pin']}.")
+    return 0
+
+
+def cmd_awake(a) -> int:
+    """Keep this computer awake while the factory works (the dashboard holds it; it lets go when runs finish)."""
+    if a.action in ("on", "off") and not dashboard_status()["running"]:
+        if a.action == "off":
+            print("The dashboard is not running, so nothing is being held awake.")
+            return 0
+        rc, st = ensure_dashboard()
+        if rc:
+            out(st, a.json)
+            return rc
+    if a.action == "on":
+        body = {"on": True, "mode": "hours", "hours": a.hours} if a.hours else {"on": True, "mode": "runs"}
+        status, res = http("/api/awake", body)
+        if status != 200:
+            print(res.get("error") or "could not turn it on")
+            return 1
+    elif a.action == "off":
+        http("/api/awake", {"on": False})
+    status, res = http("/api/awake")
+    out(res if a.json else ("Keeping the computer awake" + (f" until {time.strftime('%H:%M', time.localtime(res['until']))}" if res.get("mode") == "hours" else " until all runs finish")
+                            if res.get("on") else "Not keeping the computer awake."), a.json)
+    return 0
+
+
 # --------------------------------------------------------------------------- idea
 
 
@@ -566,7 +757,7 @@ def cmd_idea(a) -> int:
     if a.idea_file:  # safest for long ideas or text with quotes: the agent writes it to a file first
         idea = (idea + "\n\n" + Path(a.idea_file).read_text(encoding="utf-8")).strip()
     body = {"idea": idea or None, "generate": bool(a.generate), "product_links": a.link, "ref_links": a.ref,
-            "skills": a.skill, "force_mode": a.mode, "budget_usd": a.budget, "quality": a.quality}
+            "skills": a.skill, "app_context": a.context, "first_open": a.first_open, "force_mode": a.mode, "budget_usd": a.budget, "quality": a.quality}
     if a.spec_file:
         body["spec"] = Path(a.spec_file).read_text(encoding="utf-8")
     if a.reverse:
@@ -592,7 +783,7 @@ def cmd_idea(a) -> int:
         return 1
     url = f"{st['url']}/?run={res['run']}"
     if not a.no_open:
-        webbrowser.open(url)
+        open_window(url)
     out({"run": res["run"], "dashboard": url, "opened": not a.no_open,
          "next": "Watch it on the dashboard. Decisions (pick an idea, approve the spec, review the app) appear under 'Needs you'."}, a.json)
     return 0
@@ -622,6 +813,7 @@ def main(argv: Optional[list] = None) -> int:
     c.add_argument("--budget-single", type=float, help="default spending cap in dollars for single-agent runs (0 = no cap)")
     c.add_argument("--budget-multi", type=float, help="default spending cap in dollars for full-pipeline runs (0 = no cap)")
     c.add_argument("--notify", choices=["on", "off"], help="desktop notifications when a run needs you")
+    c.add_argument("--open-as", choices=["app", "browser"], help="open the dashboard as its own app window (default) or in your normal browser")
     c.add_argument("--brand-file", help="a text file with brand rules (colours, fonts, tone) every app must follow")
     c.add_argument("--models", help="strong=MODEL,standard=MODEL,fast=MODEL (non-Claude engines; empty = the agent's default)")
     c.add_argument("--command", help='custom engine: JSON list, the non-interactive command, e.g. \'["gemini", "--yolo"]\'')
@@ -640,6 +832,19 @@ def main(argv: Optional[list] = None) -> int:
     s.add_argument("--host")
     s.add_argument("--dir", help="install into this skills folder instead")
     sub.add_parser("connections", parents=[common])
+    s0 = sub.add_parser("start", parents=[common], help="the one-click way in: install on first start, start the dashboard, open it")
+    s0.add_argument("--app", action="store_true", help="open it as its own app window (default)")
+    s0.add_argument("--browser", action="store_true", help="open it in your normal browser instead")
+    s0.add_argument("--phone", action="store_true", help="also switch on the phone view (same Wi-Fi, PIN)")
+    s0.add_argument("--awake", action="store_true", help="also keep this computer awake until all runs finish")
+    s0.add_argument("--no-open", action="store_true")
+    sc = sub.add_parser("shortcut", parents=[common], help="put a Software Factory icon on your Desktop")
+    sc.add_argument("--dir", help="put it in this folder instead of the Desktop")
+    ph = sub.add_parser("phone", parents=[common], help="phone view: on, off or status")
+    ph.add_argument("action", nargs="?", choices=["on", "off", "status"], default="status")
+    aw = sub.add_parser("awake", parents=[common], help="keep this computer awake: on, off or status")
+    aw.add_argument("action", nargs="?", choices=["on", "off", "status"], default="status")
+    aw.add_argument("--hours", type=float, help="stay awake this many hours (default: until all runs finish)")
     d = sub.add_parser("dashboard", parents=[common])
     d.add_argument("action", choices=["start", "stop", "status", "open"])
     d.add_argument("--no-open", action="store_true")
@@ -655,6 +860,8 @@ def main(argv: Optional[list] = None) -> int:
     i.add_argument("--ref", action="append", default=[])
     i.add_argument("--photo", action="append", default=[])
     i.add_argument("--skill", action="append", default=[])
+    i.add_argument("--context", help="background on the app: who it is for, what it is for, what it must respect")
+    i.add_argument("--first-open", help="what the app's user should see and do the first time they open it")
     i.add_argument("--mode", choices=["single", "multi"])
     i.add_argument("--budget", type=float)
     i.add_argument("--quality", choices=["lean", "balanced", "max"], default=None,
@@ -670,7 +877,7 @@ def main(argv: Optional[list] = None) -> int:
         return rc
     return {"doctor": cmd_doctor, "configure": cmd_configure, "prepare": cmd_prepare, "agents": cmd_agents, "check": cmd_check,
             "install-skills": cmd_install_skills, "connections": cmd_connections, "dashboard": cmd_dashboard, "idea": cmd_idea,
-            "status": cmd_status}[a.cmd](a)
+            "status": cmd_status, "start": cmd_start, "shortcut": cmd_shortcut, "phone": cmd_phone, "awake": cmd_awake}[a.cmd](a)
 
 
 if __name__ == "__main__":

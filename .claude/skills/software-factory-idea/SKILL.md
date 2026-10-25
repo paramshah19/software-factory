@@ -15,7 +15,7 @@ Take only what the user actually gave. Don't invent extras.
 - **No idea, "give me ideas"** → `--generate` (the factory proposes 5; the user picks one on the dashboard).
 - **"Recreate X from Y" / "copy how Z does it"** → `--reverse "<what>"`, plus `--reverse-scope app` for a whole app (default: one feature) and `--reverse-link URL` for each page about it. It builds an original version from public information.
 - **A whole spec** (a long document) → save it to a file and pass `--spec-file <path>`.
-- **Links to products like it** → `--link URL` each. **Reference links** → `--ref URL` each. **Design photos** (file paths) → `--photo PATH` each. **Skills they want considered** → `--skill NAME` each.
+- **Links to products like it** → `--link URL` each. **Reference links** → `--ref URL` each. **Design photos** (file paths) → `--photo PATH` each. **Skills they want considered** → `--skill NAME` each. **Background on the app** (who it is for, what it must respect) → `--context "..."`. **What the app's user should see and do when they first open it** → `--first-open "..."`. Pass both exactly in the user's own words; never reword them.
 - **"Quick" / "simple" / "just one agent"** → `--mode single`. **"Do it properly" / "full pipeline"** → `--mode multi`. Otherwise leave it out: the factory decides, and the user can switch on the dashboard.
 - **A spending limit in dollars** → `--budget N`.
 - **"Cheap" / "just an experiment" / "quick try"** → `--quality lean`. **"Best possible" / "money no object"** → `--quality max`. Otherwise leave it out (Balanced).

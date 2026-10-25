@@ -10,8 +10,34 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
-HERE = Path(__file__).resolve().parent
-AGENTS_DIR = HERE / "agents"
+HERE = Path(__file__).resolve().parent          # src/: the factory's code
+ROOT = HERE.parent                              # the folder you cloned
+AGENTS_DIR = ROOT / "agents"
+WORKSPACE = Path(os.environ.get("SF_WORKSPACE") or (ROOT / "workspace"))   # everything that is YOURS: runs, always-use docs, skills library
+
+
+def migrate_legacy_layout(root: Path = ROOT, workspace: Path = WORKSPACE) -> list[str]:
+    """Older versions kept runs/, always-use/ and skills-library/ next to the code. Move them into workspace/ once.
+    Only moves what is not already there, never overwrites, and returns what it moved."""
+    moved = []
+    for name in ("runs", "always-use", "skills-library"):
+        old, new = root / name, workspace / name
+        if not old.is_dir() or old.resolve() == new.resolve():
+            continue
+        new.mkdir(parents=True, exist_ok=True)
+        for child in list(old.iterdir()):
+            if (new / child.name).exists():
+                continue
+            try:
+                shutil.move(str(child), str(new / child.name))
+                moved.append(f"{name}/{child.name}")
+            except OSError:
+                pass
+        try:
+            old.rmdir()   # only succeeds when empty
+        except OSError:
+            pass
+    return moved
 
 
 class StageFailed(Exception):

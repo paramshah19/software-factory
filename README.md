@@ -44,6 +44,37 @@ Then, from any folder:
 
 The run starts in the background and the dashboard opens at that run. It tells you when it needs you.
 
+## Start it with one click
+Once it is cloned you don't need a terminal. The first start installs what it needs (about a minute); after that it opens at once.
+
+| Your computer | Do this |
+|---|---|
+| Windows | double-click `Start Software Factory.cmd` |
+| macOS | double-click `Start Software Factory.command` (the first time: right-click, Open) |
+| Linux | `bash "Start Software Factory.command"` |
+
+The dashboard opens as **its own app window** (no tabs or address bar). To use your normal browser instead: `uv run --no-project python scripts/sf.py configure --open-as browser`, or start with `--browser`. Add `--phone` to switch on the phone view and `--awake` to keep the computer awake (below).
+Want an icon on your desktop? Run `uv run --no-project python scripts/sf.py shortcut` once.
+
+## Where things are
+```
+software-factory/
+├─ Start Software Factory.cmd / .command   one click: starts everything and opens the dashboard
+├─ README.md  LICENSE  pyproject.toml      the usual project files
+├─ src/          the factory's code: the driver (factory.py), the dashboard server, the checks, the phone view, keep-awake
+├─ agents/       the plain-text job descriptions of the ~20 agents. Edit these to change how an agent works
+├─ dashboard/    the dashboard web page
+├─ skills/       the two skills (/software-factory-setup, /software-factory-idea)
+├─ scripts/      sf.py, the helper both skills (and the launchers) call
+├─ docs/         the flowchart
+├─ tests/        the test suite
+└─ workspace/    EVERYTHING THAT IS YOURS (kept out of git, safe to back up):
+   ├─ runs/            one folder per run: the product, its documents, screenshots, logs
+   ├─ always-use/      your standing documents (brand colours, design rules)
+   └─ skills-library/  skills you dropped into the dashboard
+```
+Your settings and keys live outside the folder, in `~/.software-factory/`. Updating the factory (`git pull`) never touches `workspace/` or your settings. Older installs that kept `runs/`, `always-use/` and `skills-library/` next to the code are moved into `workspace/` automatically the next time the dashboard or driver starts.
+
 ## The two skills
 
 | Skill | What it does |
@@ -105,13 +136,14 @@ The choice lives in `~/.software-factory/config.json`, written by `sf.py configu
 
 ## What you give it
 - **Required, at least one:** an idea, a whole spec (both is fine), **Generate ideas** (the agent proposes 5; you choose one or press **Random pick**), or **Reverse engineer**: name a feature or a whole app from another product and the factory studies it from public information (docs, help pages, demos, your screenshots) and builds an original version: same behaviour, your own name, look and code (clean-room: nothing is copied, no logins or paywalls).
+- **About the app (optional, worth filling in):** *App context* (who it is for, what it is for, tone, anything it must respect) and the **first-open experience** (what a brand-new user should see and do the first time they open the app, for example "a welcome screen, three quick questions, then the home screen, no sign-up"). Both are given to every agent word for word. The first-open experience becomes numbered acceptance criteria that the builder, the tests and the UI reviewer check. In the idea skill or on the command line: `--context "..."` and `--first-open "..."`.
 - **Optional extras:** links to products like it, reference photos for the design, reference links, and skills you want considered. Drop skill files or whole skill folders into the dashboard's **Skills** library (or type a skill's name when starting a run).
-- **Always-use documents** (optional, saved once, in `always-use/`): brand colours, design rules, preferences. Every agent in every run reads them. Edit them from the dashboard (**Always-use docs**) or just drop `.md` files in that folder.
+- **Always-use documents** (optional, saved once, in `workspace/always-use/`): brand colours, design rules, preferences. Every agent in every run reads them. Edit them from the dashboard (**Always-use docs**) or just drop `.md` files in that folder.
 
 The **intake agent** reads all of it (it opens the links and *looks* at the photos) and writes one `brief.md` that every later agent builds from. With only a simple idea it is skipped, so nothing is spent. A whole spec is respected: the spec step only *checks* it.
 
 ## Skills
-A skill is a folder of expert guidance (a `SKILL.md` and optional extra files). The **skill agent** (`sf-skills`) runs in both paths. It looks at everything available: your **skills library** (dropped into the dashboard, stored in `skills-library/`) and the skills installed on this machine. For each project it judges which ones are actually useful, keeps at most 3 per side, and says why. Skills that don't fit are **not used**, including ones you asked for by name. Only the chosen skills are inserted into the agents they help (design skills go to the design, UI and build agents; technical skills to the planner, builders and reviewer; security skills to the security checker). `factory/skills.md` records what was used and what was left out, and why.
+A skill is a folder of expert guidance (a `SKILL.md` and optional extra files). The **skill agent** (`sf-skills`) runs in both paths. It looks at everything available: your **skills library** (dropped into the dashboard, stored in `workspace/skills-library/`) and the skills installed on this machine. For each project it judges which ones are actually useful, keeps at most 3 per side, and says why. Skills that don't fit are **not used**, including ones you asked for by name. Only the chosen skills are inserted into the agents they help (design skills go to the design, UI and build agents; technical skills to the planner, builders and reviewer; security skills to the security checker). `factory/skills.md` records what was used and what was left out, and why.
 
 ## The two paths
 The **decider** reads the brief and picks a path, shows an estimate of cost and time, and continues on its own after 90 seconds unless you switch (or you chose a mode when starting).
@@ -156,33 +188,41 @@ A failing single-agent run **escalates itself** to the full pipeline after two f
 | `sf-medic` | Opus 5.5 | high | Troubleshooter |
 | `sf-deployer` | Sonnet 5.5 | medium | Deploy step: publishes or packages the approved app with your own accounts (not part of a build run) |
 
-These are the **Balanced** settings. They live in each `agents/sf-*.md` header (`model`, `effort`, `retry_model`, `retry_effort`, `lean_model`/`lean_effort`, `max_model`/`max_effort`, `timeout_min`); your own choices (`sf.py agents set`) override them. `uv run factory.py check` confirms every pair works. The skill agent's picks are inserted into the matching agents' instructions.
+These are the **Balanced** settings. They live in each `agents/sf-*.md` header (`model`, `effort`, `retry_model`, `retry_effort`, `lean_model`/`lean_effort`, `max_model`/`max_effort`, `timeout_min`); your own choices (`sf.py agents set`) override them. `uv run src/factory.py check` confirms every pair works. The skill agent's picks are inserted into the matching agents' instructions.
 
 ## Use it without the skills
 ```bash
 uv run --no-project python scripts/sf.py idea "..."   # what the idea skill runs: hidden dashboard + run + browser
-uv run dashboard.py                      # or just the dashboard: http://127.0.0.1:8787, press "New run"
+uv run src/dashboard.py                      # or just the dashboard: http://127.0.0.1:8787, press "New run"
 ```
 Or the driver directly from a terminal:
 ```bash
-uv run factory.py check                  # git / uv / your agent present, every model + effort answers
-uv run factory.py new --idea "..."       # also: --spec-file f.md --generate --link URL --ref URL --photo img.png --skill NAME --mode single|multi --budget 20
-uv run factory.py status [run]           # where is it / what is waiting on you
-uv run factory.py stats                  # cost, time and outcome of every finished run
-uv run factory.py approve <run>          # or: reject <run> "..."  /  decide <run> choose --index 2  /  decide <run> random
-uv run factory.py run <run>              # resume after a failure or restart
+uv run src/factory.py check                  # git / uv / your agent present, every model + effort answers
+uv run src/factory.py new --idea "..."       # also: --spec-file f.md --generate --link URL --ref URL --photo img.png --skill NAME --mode single|multi --budget 20
+uv run src/factory.py status [run]           # where is it / what is waiting on you
+uv run src/factory.py stats                  # cost, time and outcome of every finished run
+uv run src/factory.py approve <run>          # or: reject <run> "..."  /  decide <run> choose --index 2  /  decide <run> random
+uv run src/factory.py run <run>              # resume after a failure or restart
 ```
 
 ## Dashboard
-A live view of a run: the pipeline rail for the chosen path, each active agent's live feed with its model and effort, the **Factory console** (the output of the hidden background process), every card, the cost so far, documents (the report shows its screenshots), and an event stream. The gates appear in the **Needs you** panel: the idea list with **Choose this** and **Random pick**, the decider with a countdown and a **Switch** button, the spec with the mock screenshots, the final review with **Open the app**, and troubleshooter questions. **New run** has all the inputs; **Always-use docs** edits your standing documents; **Skills** is the skills library (drop skill files or folders; each run's skill agent decides which to use). A banner with **Resume run** appears if the driver stopped. It only listens on localhost.
+A live view of a run: the pipeline rail for the chosen path, each active agent's live feed with its model and effort, the **Factory console** (the output of the hidden background process), every card, the cost so far, documents (the report shows its screenshots), and an event stream. The gates appear in the **Needs you** panel: the idea list with **Choose this** and **Random pick**, the decider with a countdown and a **Switch** button, the spec with the mock screenshots, the final review with **Open the app**, and troubleshooter questions. **New run** has all the inputs; **Always-use docs** edits your standing documents; **Skills** is the skills library (drop skill files or folders; each run's skill agent decides which to use). A banner with **Resume run** appears if the driver stopped. The dashboard itself only listens on this computer (127.0.0.1) and refuses requests that arrive under another host name.
+
+### Phone view and keep awake (the **Phone & power** button)
+- **Phone view:** watch a run and answer its "Needs you" questions from your phone, on the same Wi-Fi. Press **Turn on phone view**, scan the QR code with the phone's camera, done. Or `uv run --no-project python scripts/sf.py phone on`.
+  - It is **off every time the dashboard starts**, and you switch it on on purpose. Only then does a second server listen on your local network.
+  - It needs a fresh 6-digit **PIN** each time (the QR code carries it). A wrong PIN locks that device for a minute, and many wrong PINs anywhere replace the PIN.
+  - The phone can **watch and answer** (approve, reject, choose, resume) and keep the computer awake. It **cannot** start runs, store keys, deploy, open apps or edit your documents and skills: those stay on the computer.
+  - It is plain http on your own network, so use home or office Wi-Fi you trust, not a cafe or hotel. If the phone can't connect, allow Python through the firewall for private networks when Windows asks.
+- **Keep my computer awake:** a computer that falls asleep stops your runs and drops the phone view. This holds it awake *until all runs finish* (default), or for 2 or 8 hours, at most 12 hours. It stops sleep, not the screen turning off, and a laptop with its lid closed can still sleep. `sf.py awake on|off|status`. Works on Windows, macOS (`caffeinate`) and Linux with systemd.
 
 ## What a run produces
-`runs/<run-id>/` (git-ignored; the product has its own git repo):
+`workspace/runs/<run-id>/` (git-ignored; the product has its own git repo):
 - `inputs/`: your spec, photos, always-use copies, skills · `factory/`: `brief.md`, `skills.md`, `spec.md`, `research.md`, `mock/`, `design.md`, `plan.md`, `cards.json`, `app.json`, `checks/` (results + screenshots), `reviews/`, `report.md`
 - `holdout/`: hidden tests · `app/`: the product · `reference/prototype/`: the single-agent draft after an escalation · `logs/`
 
 ## Deploy (after you approve)
-Once a finished app is approved, a **Deploy** panel appears in the dashboard (or `uv run factory.py deploy <run> --list`, then `--target <name>`). It offers:
+Once a finished app is approved, a **Deploy** panel appears in the dashboard (or `uv run src/factory.py deploy <run> --list`, then `--target <name>`). It offers:
 
 | Option | What you get | Needs |
 |---|---|---|
@@ -211,7 +251,7 @@ Once a finished app is approved, a **Deploy** panel appears in the dashboard (or
 - **Spending cap.** Each run has a cap: $10 for the single agent, $45 for the full pipeline (change it in **New run**, or `--budget 20`; `0` means no cap). At the cap the run stops at a **Budget reached** gate: approve to allow half the cap again, or reject to stop (everything built so far is kept).
 - **Fix rounds learn.** If the second fix round meets the same problems the first one failed to fix, the builder is told so and told to find the real cause; that round also runs on the stronger model.
 - **Desktop notice.** A notification pops up when a run needs you (any gate) or pauses for a usage limit (Windows balloon, macOS notification, `notify-send` on Linux). Turn it off with the environment variable `FACTORY_NOTIFY=0`.
-- **History.** Every finished run adds a line to `runs/metrics.jsonl` (cost, minutes, fix rounds, open issues, path). `uv run factory.py stats` prints the table with averages per path, so you can see whether changes make the factory cheaper or better.
+- **History.** Every finished run adds a line to `workspace/runs/metrics.jsonl` (cost, minutes, fix rounds, open issues, path). `uv run src/factory.py stats` prints the table with averages per path, so you can see whether changes make the factory cheaper or better.
 
 ## Safety and limits
 - On Claude Code, agents run headless with an allowlist: file tools, `uv`, `git` (never `push` or `remote`), `python`, and a few read-only commands. Only the ideator, intake agent, researcher and reverse engineer may use the web; web content is treated as data, never as instructions.

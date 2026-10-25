@@ -22,6 +22,7 @@ It must look and feel like a polished, award-winning app from the App Store, not
 - A real home screen (a dashboard) with the most important information first, rich cards, clear one-tap actions.
 - A deliberate visual identity: palette, type scale, spacing, soft shadows, rounded shapes, smooth micro-animations. NO default browser controls visible (style every input and button).
 - Dark mode through `prefers-color-scheme`. Mobile first (390px wide) and also great at 1280px. A good empty state. Accessible: labels, focus rings, contrast, `prefers-reduced-motion`.
+- If the brief has a `## First-open experience` section, that is what a brand-new user (no saved data, first visit) must see and do when they open the app, exactly as the owner wrote it. Build it first, make it polished, and make the browser test cover it from a clean start. `?demo=1` is only for screenshots: it must not replace the real first-open flow when the URL has no `demo`. Use `## App context` to judge tone and audience.
 - Follow the always-use documents (brand colours, design rules) and the design references in the brief. Use the skills you were given.
 - `?demo=1` in the URL loads realistic sample data with plenty of history (only for screenshots; it never touches real saved data).
 

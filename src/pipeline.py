@@ -276,6 +276,7 @@ class PipelineMixin:
             self.event("skill_missing", None, f"skill not found: {name}")
 
         brief = self.fdir / "brief.md"
+        owner_text = checks.context_markdown(inp.get("app_context"), inp.get("first_open"))  # the owner's own words: they go into the brief unchanged
         needs_agent = bool(inp.get("product_links") or inp.get("ref_links") or inp.get("photos") or has_spec)
         self.add_card("intake", "Intake: build the brief", "sf-intake" if needs_agent else None, "stage", "intake")
         if needs_agent:
@@ -288,13 +289,21 @@ class PipelineMixin:
                 lines.append("REFERENCE PHOTOS (open each with Read and look at it):\n" + "\n".join(f"- inputs/photos/{n}" for n in inp["photos"]))
             if has_spec:
                 lines.append("The owner supplied a whole spec: inputs/spec.md (also copied to factory/spec.md).")
+            if owner_text:
+                lines.append("THE OWNER WROTE THESE SECTIONS THEMSELVES (also in inputs/context.md). Copy each one into brief.md word for word "
+                             "under the same heading; never shorten or reword it. The first-open experience is a hard requirement.\n\n" + owner_text)
             if inp.get("skills"):
                 lines.append("SKILLS the owner asked for: " + ", ".join(inp["skills"]))
             if rev:
                 lines.append("factory/reverse.md holds a reverse-engineering analysis of " + rev["target"] + ". Fold its key points into the brief under 'Analysis of the target' and keep the clean-room rule: same behaviour, our own name, look and code.")
 
             def check():
-                return None if "## Summary" in brief.read_text(encoding="utf-8") else "brief.md needs a '## Summary' section"
+                text = brief.read_text(encoding="utf-8")
+                if "## Summary" not in text:
+                    return "brief.md needs a '## Summary' section"
+                if inp.get("first_open") and "## First-open experience" not in text:
+                    return "brief.md needs the owner's '## First-open experience' section, copied word for word"
+                return None
             self.run_agent_stage("intake", "sf-intake", self.prompt("intake", "Intake", "\n\n".join(lines)), [brief], check)
         else:
             always = [n for n, _ in checks.load_always(self.rd / "inputs" / "always-use")]
@@ -306,6 +315,7 @@ class PipelineMixin:
             brief.write_text(
                 f"# Brief: {title}\n\n## Summary\n{summary}\n\n## From the owner\n{idea or summary}\n\n{analysis}"
                 "## Product references\nnone given\n\n## Design references\nnone given: follow the always-use documents and make it look like a polished, designed product\n\n"
+                f"{owner_text + chr(10) if owner_text else ''}"
                 f"## Constraints\n{('Always-use documents: ' + ', '.join(always)) if always else 'none'}\n\n"
                 f"## Skills to apply\n{', '.join(inp.get('skills') or []) or 'none'}\n\n## Assumptions and open questions\nnone\n", encoding="utf-8")
             self.card_start("intake")
@@ -998,7 +1008,7 @@ class PipelineMixin:
         self.stage("build", "done")
 
     def record_metrics(self):
-        """One line per finished run in runs/metrics.jsonl, so cost and quality can be compared over time (`factory.py stats`)."""
+        """One line per finished run in runs/metrics.jsonl, so cost and quality can be compared over time (`src/factory.py stats`)."""
         st = self.state["status"]
         if st not in ("done", "failed"):
             return

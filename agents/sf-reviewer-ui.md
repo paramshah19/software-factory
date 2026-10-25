@@ -16,6 +16,7 @@ You review how the finished app LOOKS and feels. The driver took real browser sc
 - Phone versus desktop: the phone view must not look like a shrunken desktop; text and tap targets must be large enough.
 - Dark mode is readable. Empty, loading and error states exist and look designed.
 - Browser-default controls (grey buttons, bare text boxes) left visible count as defects.
+- If the brief has a `## First-open experience` section, check the screens against it: the first thing a new user sees must be what the owner asked for. Anything missing or watered down is blocking.
 
 ## Output
 Write the JSON file named in the prompt:

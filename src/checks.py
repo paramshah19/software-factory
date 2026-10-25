@@ -11,9 +11,9 @@ import tempfile
 from pathlib import Path
 from typing import Callable, Optional
 
-from common import HERE, posix, sh
+from common import HERE, ROOT, WORKSPACE, posix, sh
 
-ALWAYS_DIR = HERE / "always-use"
+ALWAYS_DIR = WORKSPACE / "always-use"
 BROWSE_TOOL = HERE / "tools_browse.py"
 SIZES = [[390, 844], [1280, 800]]  # phone, desktop
 
@@ -26,7 +26,7 @@ ESTIMATES = {
 
 # The table above was measured with the strongest models (now the "max" Quality). The other presets are ESTIMATES until
 # measured: balanced moves planning/design from Opus to Sonnet (half the price per token) and caps plans at 6 cards;
-# lean also puts the maker, spec writer and reviewers on Sonnet. `factory.py stats` shows the real numbers per run.
+# lean also puts the maker, spec writer and reviewers on Sonnet. `src/factory.py stats` shows the real numbers per run.
 QUALITY_FACTOR = {"lean": {"single": 0.55, "multi": 0.45}, "balanced": {"single": 1.0, "multi": 0.6}, "max": {"single": 1.0, "multi": 1.0}}
 
 
@@ -174,7 +174,7 @@ def capture_screens(app: Path, app_json: dict, out_dir: Path, run: Callable = sh
     with tempfile.TemporaryDirectory() as td:
         cf = Path(td) / "browse.json"
         cf.write_text(json.dumps(cfg), encoding="utf-8")
-        rc, out = run(["uv", "run", "--with", "playwright", "python", str(BROWSE_TOOL), str(cf)], HERE, 240, *([{**os.environ, **env}] if env else []))
+        rc, out = run(["uv", "run", "--with", "playwright", "python", str(BROWSE_TOOL), str(cf)], ROOT, 240, *([{**os.environ, **env}] if env else []))
     m = re.search(r"@@RESULT@@ (\{.*\})", out)
     if not m:
         return {"ok": False, "error": f"browser tool failed (exit {rc}): {out.strip()[-300:]}"}
@@ -258,7 +258,7 @@ def kind_checks(app: Path, app_json: dict, out_dir: Path, logs: Path) -> tuple[O
 # --------------------------------------------------------------------------- skills and always-use documents
 
 
-SKILLS_LIBRARY = HERE / "skills-library"   # skills the owner dropped into the dashboard
+SKILLS_LIBRARY = WORKSPACE / "skills-library"   # skills the owner dropped into the dashboard
 SKILL_EXT = {".md", ".txt", ".py", ".js", ".ts", ".json", ".yaml", ".yml", ".toml", ".sh", ".ps1", ".css", ".html", ".svg", ".csv", ".png", ".jpg", ".jpeg"}
 MAX_SKILL_FILES, MAX_SKILL_FILE_BYTES, MAX_SKILL_TOTAL_BYTES = 200, 2_000_000, 8_000_000
 
@@ -267,8 +267,8 @@ def skill_sources() -> list[tuple[Path, str]]:
     """Where skills live on this machine: your library first, then installed, workspace and project skills."""
     home = Path.home()
     return [(SKILLS_LIBRARY, "yours"), (home / ".claude" / "skills", "installed"), (home / ".agents" / "skills", "installed"),
-            (home / ".codex" / "skills", "installed"), (HERE.parent.parent / ".claude" / "skills", "workspace"),
-            (HERE / ".claude" / "skills", "project")]
+            (home / ".codex" / "skills", "installed"), (ROOT.parent.parent / ".claude" / "skills", "workspace"),
+            (ROOT / ".claude" / "skills", "project")]
 
 
 def skill_roots() -> list[Path]:
@@ -495,6 +495,22 @@ def check_inputs(inputs: dict) -> Optional[str]:
     if not (str(inputs.get("idea") or "").strip() or str(inputs.get("spec") or "").strip() or inputs.get("generate") or has_reverse):
         return "give an idea or a whole spec, choose 'generate ideas', or say what to reverse engineer"
     return None
+
+
+def clean_text(value, limit: int) -> Optional[str]:
+    """Free text the owner typed (context for the app, the first-open experience): trimmed, capped, or None when empty."""
+    text = str(value or "").replace("\r\n", "\n").strip()
+    return text[:limit].rstrip() or None
+
+
+def context_markdown(app_context: Optional[str], first_open: Optional[str]) -> str:
+    """The two owner-written sections, as they appear in inputs/context.md and (verbatim) in the brief."""
+    parts = []
+    if app_context:
+        parts.append("## App context (from the owner)\n" + app_context)
+    if first_open:
+        parts.append("## First-open experience (the owner's requirement)\nWhat the app's user should see and do the first time they open it:\n" + first_open)
+    return "\n\n".join(parts) + ("\n" if parts else "")
 
 
 def clean_links(links) -> list[str]:

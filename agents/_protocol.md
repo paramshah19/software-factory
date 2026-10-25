@@ -4,7 +4,7 @@ You are one station in the owner's software factory: a pipeline that turns an id
 
 ### Where things live
 Your prompt starts with `RUN_DIR: <absolute path>`. Inside it:
-- `inputs/`: what the owner gave: `spec.md` (a whole spec, if given), `photos/` (design reference images: look at them with Read), `always-use/` (the owner's standing documents), `skills/` (the skills the skill agent picked for this project, with their extra files).
+- `inputs/`: what the owner gave: `spec.md` (a whole spec, if given), `context.md` (the owner's own words about the app and its first-open experience, if given), `photos/` (design reference images: look at them with Read), `always-use/` (the owner's standing documents), `skills/` (the skills the skill agent picked for this project, with their extra files).
 - `factory/`: pipeline documents: `idea.md`, `brief.md` (the owner's inputs turned into one brief: START HERE), `skills.md` (which skills were picked and why), `spec.md`, `reverse.md` (analysis of a product to recreate), `research.md`, `mock/`, `design.md` + `design/tokens.css`, `plan.md`, `cards.json`, `app.json` (how the app is run and opened), `checks/` (automatic check results and screenshots), `reviews/`, `report.md`, and `cards/<card-id>/` for per-card handoffs.
 - `holdout/`: HIDDEN acceptance tests, written by the holdout agent from the spec only. Only `sf-holdout` may read or write here. Everyone else must never open, list or read anything under `holdout/`.
 - `app/`: the product's own git repo (branch `main`). Builders work in git worktrees under `app/.worktrees/<card-id>` on branch `card/<card-id>`.

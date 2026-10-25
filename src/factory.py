@@ -11,12 +11,12 @@ Every stage must leave real files on disk. The driver checks them (and runs the 
 saying "done" is never enough.
 
 Usage (from this folder):
-    uv run factory.py check                       # are claude / git / uv available, do all models answer?
-    uv run factory.py new [--idea "..."]          # start a run in the foreground (no idea = factory invents one)
-    uv run factory.py run RUN                     # resume a run (after a failure or a restart)
-    uv run factory.py status [RUN]
-    uv run factory.py approve RUN [--note ".."]   # pass the pending owner gate
-    uv run factory.py reject RUN "feedback"       # send the pending gate back
+    uv run src/factory.py check                       # are claude / git / uv available, do all models answer?
+    uv run src/factory.py new [--idea "..."]          # start a run in the foreground (no idea = factory invents one)
+    uv run src/factory.py run RUN                     # resume a run (after a failure or a restart)
+    uv run src/factory.py status [RUN]
+    uv run src/factory.py approve RUN [--note ".."]   # pass the pending owner gate
+    uv run src/factory.py reject RUN "feedback"       # send the pending gate back
 """
 
 from __future__ import annotations
@@ -38,13 +38,14 @@ from pathlib import Path
 from typing import Callable, Optional
 
 HERE = Path(__file__).resolve().parent
-from common import (AGENTS_DIR, NO_WINDOW, Role, StageFailed, failing_acs, git, holdout_withs, load_role,  # noqa: E402
+from common import (AGENTS_DIR, NO_WINDOW, WORKSPACE, Role, StageFailed, failing_acs, git, holdout_withs, load_role,  # noqa: E402
                     parse_role, posix, ready_cards, sh, slug, spec_ac_text, spec_acs, validate_cards)
 import checks  # noqa: E402
+import common  # noqa: E402
 import engines  # noqa: E402
 import kinds  # noqa: E402
 from pipeline import PipelineMixin  # noqa: E402
-RUNS_DIR = HERE / "runs"
+RUNS_DIR = WORKSPACE / "runs"
 ROLES = ["sf-ideator", "sf-intake", "sf-decider", "sf-maker", "sf-security", "sf-spec", "sf-researcher", "sf-mock", "sf-designer",
          "sf-planner", "sf-integrator", "sf-holdout", "sf-reverse", "sf-skills", "sf-builder", "sf-reviewer", "sf-reviewer-ui", "sf-writer", "sf-medic"]
 DOCS = ["idea.md", "reverse.md", "brief.md", "skills.md", "spec.md", "research.md", "design.md", "plan.md", "report.md"]
@@ -1050,6 +1051,7 @@ def create_run(inputs, runs_dir: Path = RUNS_DIR) -> Path:
              "product_links": checks.clean_links(inputs.get("product_links")), "ref_links": checks.clean_links(inputs.get("ref_links")),
              "reverse": ({"target": str(rev_in["target"]).strip()[:600], "scope": rev_in.get("scope") if rev_in.get("scope") in ("feature", "app") else "feature",
                           "links": checks.clean_links(rev_in.get("links"))} if rev_in and str(rev_in.get("target") or "").strip() else None),
+             "app_context": checks.clean_text(inputs.get("app_context"), 4000), "first_open": checks.clean_text(inputs.get("first_open"), 2000),
              "photos": [], "skills": [], "force_mode": inputs.get("force_mode") if inputs.get("force_mode") in ("single", "multi") else None,
              "quality": inputs.get("quality") if inputs.get("quality") in QUALITY_CHOICES else default_quality()}
     try:
@@ -1057,6 +1059,8 @@ def create_run(inputs, runs_dir: Path = RUNS_DIR) -> Path:
             clean["budget_usd"] = max(0.0, min(500.0, float(inputs["budget_usd"])))
     except (TypeError, ValueError):
         pass
+    if clean["app_context"] or clean["first_open"]:   # the originals, word for word, for any agent that wants to re-read them
+        (rd / "inputs" / "context.md").write_text(checks.context_markdown(clean["app_context"], clean["first_open"]), encoding="utf-8")
     if str(inputs.get("spec") or "").strip():
         (rd / "inputs" / "spec.md").write_text(str(inputs["spec"]).strip() + "\n", encoding="utf-8")
     for i, ph in enumerate((inputs.get("photos") or [])[:8], 1):
@@ -1117,7 +1121,7 @@ def write_decision(rd: Path, decision: str, feedback: str = "", note: str = "", 
 def find_run(name: Optional[str], runs_dir: Path = RUNS_DIR) -> Path:
     runs = sorted((p for p in runs_dir.glob("*") if (p / "state.json").exists()), reverse=True)
     if not runs:
-        raise SystemExit("no runs yet: uv run factory.py new")
+        raise SystemExit("no runs yet: uv run src/factory.py new")
     if not name:
         return runs[0]
     for p in runs:
@@ -1201,7 +1205,7 @@ def cmd_deploy(name: str, target: Optional[str], list_only: bool) -> int:
         for o in deploy.options_for(app_json, deploy.detect_connectors()):
             print(f"{o['id']:13} {'ready' if o['available'] else 'not available':14} {o['title']}: " + (f"via {o['via']}" if o["available"] else o["reason"]))
         if not target:
-            print("\nchoose one with: uv run factory.py deploy <run> --target <name>")
+            print("\nchoose one with: uv run src/factory.py deploy <run> --target <name>")
         return 0
     try:
         entry = deploy.deploy_run(rd, target)
@@ -1245,6 +1249,7 @@ def cmd_stats() -> None:
 
 
 def main(argv=None) -> int:
+    common.migrate_legacy_layout()   # older installs kept runs/ next to the code
     ap = argparse.ArgumentParser(prog="factory.py")
     sub = ap.add_subparsers(dest="cmd", required=True)
     sub.add_parser("check")
@@ -1259,6 +1264,8 @@ def main(argv=None) -> int:
     n.add_argument("--ref", action="append", default=[], help="a reference link (repeatable)")
     n.add_argument("--photo", action="append", default=[], help="a design reference photo (repeatable)")
     n.add_argument("--skill", action="append", default=[], help="a skill to use (repeatable)")
+    n.add_argument("--context", help="background on the app: who it is for, what it is for, anything it must respect")
+    n.add_argument("--first-open", help="what the app's user should see and do the first time they open it (e.g. a welcome screen, a short set-up)")
     n.add_argument("--mode", choices=["single", "multi"], help="skip the decider's choice")
     n.add_argument("--quality", choices=list(QUALITY_CHOICES), default=None,
                    help="lean (cheapest, for experiments), balanced or max (strongest models everywhere); default: your setup choice")
@@ -1307,7 +1314,7 @@ def main(argv=None) -> int:
         try:
             rd = create_run({"idea": args.idea, "spec": spec, "generate": args.generate, "reverse": ({"target": args.reverse, "scope": args.reverse_scope, "links": args.reverse_link} if args.reverse else None),
                              "product_links": args.link, "ref_links": args.ref,
-                             "photos": args.photo, "skills": args.skill, "force_mode": args.mode, "budget_usd": args.budget, "quality": args.quality})
+                             "photos": args.photo, "skills": args.skill, "app_context": args.context, "first_open": args.first_open, "force_mode": args.mode, "budget_usd": args.budget, "quality": args.quality})
         except ValueError as e:
             print(f"cannot start: {e}")
             return 2
@@ -1317,7 +1324,7 @@ def main(argv=None) -> int:
     try:
         Run(rd).execute()
     except StageFailed as e:
-        print(f"\nstopped: {e}\nresume with: uv run factory.py run {rd.name}")
+        print(f"\nstopped: {e}\nresume with: uv run src/factory.py run {rd.name}")
         return 1
     print(f"\ndone. product: {rd / 'app'}\nreport: {rd / 'factory' / 'report.md'}")
     return 0

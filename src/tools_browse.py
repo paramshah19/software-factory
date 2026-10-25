@@ -1,6 +1,6 @@
 """Open an app in a real browser (Edge via Playwright), take screenshots and collect problems.
 
-Run with:  uv run --with playwright python tools_browse.py <config.json>
+Run with:  uv run --with playwright python src/tools_browse.py <config.json>
 Prints one line: @@RESULT@@ {json}. Never needs a browser download: it drives the installed Edge (or Chrome).
 """
 

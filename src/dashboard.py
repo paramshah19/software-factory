@@ -4,8 +4,8 @@ Reads each run's state.json and agent logs (written by factory.py) and streams t
 Server-Sent Events, so the page updates within ~1s of anything happening. It can also start runs, resume them,
 answer the owner gates, and edit the always-use documents.
 
-    uv run dashboard.py            # http://127.0.0.1:8787
-    uv run dashboard.py --port 9000
+    uv run src/dashboard.py            # http://127.0.0.1:8787
+    uv run src/dashboard.py --port 9000
 """
 
 from __future__ import annotations
@@ -29,13 +29,18 @@ from typing import Optional
 from urllib.parse import parse_qs, urlparse
 import webbrowser
 
+import awake
 import checks
+import common
 import deploy
 import factory
 import keys
+import qr
+import remote
 
-HERE = Path(__file__).resolve().parent
-STATIC = HERE / "dashboard"
+HERE = Path(__file__).resolve().parent   # src/
+ROOT = HERE.parent                       # the folder you cloned
+STATIC = ROOT / "dashboard"
 STALE_AFTER = 20  # seconds without a driver heartbeat = driver is not running
 CARD_STATE = {"pending": "waiting", "queued": "queued", "active": "active", "owner": "owner", "blocked": "blocked", "done": "done"}
 FILE_ROOTS = ("factory/", "inputs/photos/", "reference/shots/")  # the only places the page may read images from
@@ -152,7 +157,7 @@ def spawn_driver(run_id: str) -> None:
     # CREATE_NO_WINDOW, not DETACHED_PROCESS: a process with no console makes Windows open a new visible
     # console for every child it starts (claude, git, uv). A hidden console is inherited by the children instead.
     flags = (subprocess.CREATE_NO_WINDOW | subprocess.CREATE_NEW_PROCESS_GROUP) if os.name == "nt" else 0
-    subprocess.Popen([sys.executable, str(HERE / "factory.py"), "run", run_id], cwd=str(HERE), stdout=log, stderr=log,
+    subprocess.Popen([sys.executable, str(HERE / "factory.py"), "run", run_id], cwd=str(ROOT), stdout=log, stderr=log,
                      stdin=subprocess.DEVNULL, creationflags=flags, close_fds=True, start_new_session=(os.name != "nt"),
                      env=dict(os.environ, PYTHONUNBUFFERED="1"))  # unbuffered: the Factory console shows output as it happens
 
@@ -161,7 +166,7 @@ def spawn_detached(args: list[str], run_id: str, log_name: str) -> None:
     """Run `factory.py <args>` for a run in a hidden, detached process (same reasoning as spawn_driver)."""
     log = open(factory.RUNS_DIR / run_id / "logs" / log_name, "ab")
     flags = (subprocess.CREATE_NO_WINDOW | subprocess.CREATE_NEW_PROCESS_GROUP) if os.name == "nt" else 0
-    subprocess.Popen([sys.executable, str(HERE / "factory.py"), *args], cwd=str(HERE), stdout=log, stderr=log,
+    subprocess.Popen([sys.executable, str(HERE / "factory.py"), *args], cwd=str(ROOT), stdout=log, stderr=log,
                      stdin=subprocess.DEVNULL, creationflags=flags, close_fds=True, start_new_session=(os.name != "nt"),
                      env=dict(os.environ, PYTHONUNBUFFERED="1"))  # unbuffered: the Factory console shows output as it happens
 
@@ -297,7 +302,7 @@ def file_for(run: str, rel: str) -> Optional[tuple[Path, str]]:
 def act(path: str, body: dict) -> tuple[int, dict]:
     if path == "/api/new":
         try:
-            rd = factory.create_run({k: body.get(k) for k in ("idea", "spec", "generate", "reverse", "product_links", "ref_links", "photos", "skills", "force_mode", "budget_usd", "quality")},
+            rd = factory.create_run({k: body.get(k) for k in ("idea", "spec", "generate", "reverse", "product_links", "ref_links", "photos", "skills", "app_context", "first_open", "force_mode", "budget_usd", "quality")},
                                     factory.RUNS_DIR)
         except ValueError as e:
             return 400, {"error": str(e)}
@@ -307,7 +312,7 @@ def act(path: str, body: dict) -> tuple[int, dict]:
         name = checks.safe_doc_name(str(body.get("name", "")))
         if not name:
             return 400, {"error": "name must look like brand-colours.md (letters, numbers, spaces, dashes)"}
-        checks.ALWAYS_DIR.mkdir(exist_ok=True)
+        checks.ALWAYS_DIR.mkdir(parents=True, exist_ok=True)
         (checks.ALWAYS_DIR / name).write_text(str(body.get("text", "")), encoding="utf-8")
         return 200, {"ok": True}
     if path == "/api/skills/upload":
@@ -326,6 +331,22 @@ def act(path: str, body: dict) -> tuple[int, dict]:
             return 404, {"error": "no such document"}
         (checks.ALWAYS_DIR / name).unlink()
         return 200, {"ok": True}
+    if path == "/api/awake":   # keep this computer from sleeping while the factory works (also reachable from the phone)
+        try:
+            return 200, AWAKE.start(str(body.get("mode") or "runs"), float(body.get("hours") or 2)) if body.get("on") else AWAKE.stop()
+        except (RuntimeError, ValueError) as e:
+            return 400, {"error": str(e)}
+    if path == "/api/remote":   # the phone view on/off (this computer only: the phone cannot switch itself on or rotate its own PIN)
+        try:
+            if body.get("on") is False:
+                PHONE.stop()
+            else:
+                PHONE.start()
+                if body.get("rotate"):
+                    PHONE.auth.reset()
+        except RuntimeError as e:
+            return 500, {"error": str(e)}
+        return 200, PHONE.status()
     run = str(body.get("run", ""))
     rd = safe_run_dir(run)
     if rd is None:
@@ -386,11 +407,103 @@ def act(path: str, body: dict) -> tuple[int, dict]:
     return 404, {"error": "not found"}
 
 
+# --------------------------------------------------------------------------- keep awake and phone view
+
+
+def any_run_active() -> bool:
+    """Is a driver working (or waiting for you at a gate) right now? Used to let go of 'keep awake' when everything is finished."""
+    now = time.time()
+    for p in sorted(factory.RUNS_DIR.glob("*"), reverse=True)[:30]:
+        s = read_state(p) if (p / "state.json").exists() else None
+        if s and s.get("status") in ("running", "gate") and now - (s.get("heartbeat") or 0) < STALE_AFTER:
+            return True
+    return False
+
+
+AWAKE = awake.KeepAwake(busy=any_run_active)
+
+
+class PhoneView:
+    """The second, network-facing server. Off until you switch it on; see remote.py for how it stays safe."""
+
+    def __init__(self):
+        self.auth = remote.RemoteAuth()
+        self.srv: Optional[ThreadingHTTPServer] = None
+        self.port: Optional[int] = None
+        self.base_port = 8787
+        self.lock = threading.Lock()
+
+    @property
+    def on(self) -> bool:
+        return self.srv is not None
+
+    def start(self) -> None:
+        with self.lock:
+            if self.srv:
+                return
+            last: Optional[OSError] = None
+            for port in range(self.base_port + 1, self.base_port + 25):
+                try:
+                    srv = ThreadingHTTPServer(("0.0.0.0", port), RemoteHandler)
+                except OSError as e:
+                    last = e
+                    continue
+                srv.daemon_threads = True
+                self.srv, self.port = srv, port
+                self.auth.reset()
+                self.auth.rotated_by_attack = False
+                threading.Thread(target=srv.serve_forever, daemon=True).start()
+                return
+            raise RuntimeError(f"no free port to share the dashboard on ({last})")
+
+    def stop(self) -> None:
+        with self.lock:
+            srv, self.srv, self.port = self.srv, None, None
+            self.auth.clear()
+        if srv:
+            srv.shutdown()
+            srv.server_close()
+
+    def status(self) -> dict:
+        if not self.on:
+            return {"on": False}
+        urls = [f"http://{ip}:{self.port}" for ip in remote.lan_addresses()]
+        pin = self.auth.pin or ""
+        link = f"{urls[0]}/?pin={pin}" if urls else ""
+        return {"on": True, "urls": urls, "pin": pin, "link": link, "port": self.port, "signed_in": self.auth.signed_in(),
+                "qr": qr.svg(link, dark="#10130a", light="#ffffff") if link else "", "rotated_by_attack": self.auth.rotated_by_attack,
+                "note": "" if urls else "No local network found: connect this computer to Wi-Fi or a cable first."}
+
+
+PHONE = PhoneView()
+
+
 # --------------------------------------------------------------------------- http
 
 
 class Handler(BaseHTTPRequestHandler):
     server_version = "SFDashboard/3"
+    remote = False   # RemoteHandler (the phone view) sets this
+
+    def _host_ok(self) -> bool:
+        """On the loopback server only answer requests addressed to localhost: a web page cannot trick the browser into
+        talking to this dashboard under another name (DNS rebinding)."""
+        if self.remote or self.server.server_address[0] not in ("127.0.0.1", "::1"):
+            return True
+        host = (self.headers.get("Host") or "").rsplit(":", 1)[0].strip("[]").lower()
+        return host in ("127.0.0.1", "localhost", "::1")
+
+    def _still_allowed(self) -> bool:
+        return True
+
+    def _refuse(self, message: str, code: int):
+        """Answer a POST we will not act on. The body is read first: replying and closing with unread data makes the
+        connection reset on Windows, and the caller would see a dropped connection instead of the message."""
+        try:
+            self.rfile.read(min(int(self.headers.get("Content-Length") or 0), 1_000_000))
+        except (ValueError, OSError):
+            pass
+        return self._json({"error": message}, code)
 
     def log_message(self, *a):
         pass
@@ -412,13 +525,19 @@ class Handler(BaseHTTPRequestHandler):
         url = urlparse(self.path)
         qs = {k: v[0] for k, v in parse_qs(url.query).items()}
         run = qs.get("run", "")
+        if not self._host_ok():
+            return self._json({"error": "forbidden"}, 403)
+        if url.path == "/api/awake":
+            return self._json(AWAKE.status())
+        if url.path == "/api/remote":
+            return self._json({"error": "forbidden"}, 403) if self.remote else self._json(PHONE.status())
         if url.path in ("/", "/index.html"):
             return self._send(200, (STATIC / "index.html").read_bytes(), "text/html; charset=utf-8")
         if url.path == "/favicon.ico":
             return self._send(204, b"", "image/x-icon")
         if url.path == "/api/info":  # lets scripts/sf.py confirm this is the factory it expects
-            return self._json({"app": "software-factory", "factory_dir": factory.posix(HERE), "engine": factory.engines.describe(),
-                               "default_quality": factory.default_quality()})
+            return self._json({"app": "software-factory", "factory_dir": factory.posix(ROOT), "engine": factory.engines.describe(),
+                               "default_quality": factory.default_quality(), "remote": self.remote})
         if url.path == "/api/state":
             return self._json(snapshot(run))
         if url.path == "/api/doc":
@@ -462,6 +581,8 @@ class Handler(BaseHTTPRequestHandler):
         last, last_beat = "", 0.0
         try:
             while True:
+                if self.remote and not self._still_allowed():   # the phone view was switched off, or the PIN was replaced
+                    return
                 data = json.dumps(snapshot(run_id))
                 digest = hashlib.sha1(re.sub(r'"now": \d+', "", data).encode()).hexdigest()
                 if digest != last:
@@ -478,6 +599,8 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         url = urlparse(self.path)
+        if not self._host_ok():
+            return self._refuse("forbidden", 403)
         length = int(self.headers.get("Content-Length") or 0)
         if length > 60_000_000:
             return self._json({"error": "too large"}, 413)
@@ -494,17 +617,89 @@ class Handler(BaseHTTPRequestHandler):
         return self._json(obj, code)
 
 
+class RemoteHandler(Handler):
+    """What a phone talks to. Same pages, but every request needs the PIN (once) and only a short list of actions is allowed."""
+    remote = True
+
+    def end_headers(self):
+        self.send_header("Referrer-Policy", "no-referrer")
+        self.send_header("X-Content-Type-Options", "nosniff")
+        super().end_headers()
+
+    def _token(self) -> Optional[str]:
+        return remote.cookie_value(self.headers.get("Cookie"))
+
+    def _still_allowed(self) -> bool:
+        return PHONE.on and PHONE.auth.valid(self._token())
+
+    def _cookie(self, token: str) -> dict:
+        return {"Set-Cookie": f"{remote.COOKIE}={token}; Path=/; Max-Age={remote.COOKIE_AGE}; HttpOnly; SameSite=Strict"}
+
+    def do_GET(self):
+        url = urlparse(self.path)
+        qs = {k: v[0] for k, v in parse_qs(url.query).items()}
+        if not PHONE.on:
+            return self._send(403, b"Phone view is off", "text/plain")
+        if "pin" in qs and url.path in ("/", "/index.html"):   # the QR code: sign in, then drop the PIN from the address
+            token, _ = PHONE.auth.login(self.client_address[0], qs["pin"])
+            if token:
+                self.send_response(303)
+                self.send_header("Location", "/")
+                self.send_header("Content-Length", "0")
+                self.send_header("Cache-Control", "no-store")
+                for k, v in self._cookie(token).items():
+                    self.send_header(k, v)
+                self.end_headers()
+                return
+        if not self._still_allowed():
+            if url.path in ("/", "/index.html"):
+                return self._send(401, remote.LOGIN_PAGE.encode(), "text/html; charset=utf-8")
+            return self._json({"error": "not signed in"}, 401)
+        if url.path not in remote.ALLOWED_GET:
+            return self._json({"error": "this is only available on the computer"}, 403)
+        return super().do_GET()
+
+    def do_POST(self):
+        url = urlparse(self.path)
+        if not PHONE.on:
+            return self._refuse("Phone view is off", 403)
+        if url.path == "/api/login":
+            try:
+                body = json.loads(self.rfile.read(min(int(self.headers.get("Content-Length") or 0), 2000)) or b"{}")
+            except (json.JSONDecodeError, ValueError):
+                return self._json({"error": "bad json"}, 400)
+            if self.headers.get("X-SF-Dashboard") != "1":
+                return self._json({"error": "forbidden"}, 403)
+            token, why = PHONE.auth.login(self.client_address[0], str(body.get("pin", "")))
+            if not token:
+                return self._json({"error": why}, 429 if "too many" in why else 401)
+            return self._send(200, b'{"ok": true}', "application/json", self._cookie(token))
+        if not self._still_allowed():
+            return self._refuse("not signed in", 401)
+        if url.path not in remote.ALLOWED_POST:
+            return self._refuse("this is only available on the computer", 403)
+        return super().do_POST()
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser()
     ap.add_argument("--port", type=int, default=8787)
     ap.add_argument("--host", default="127.0.0.1")
+    ap.add_argument("--phone", action="store_true", help="switch the phone view on right away (same Wi-Fi, PIN protected)")
+    ap.add_argument("--awake", action="store_true", help="keep this computer awake until all runs finish")
     a = ap.parse_args(argv)
-    factory.RUNS_DIR.mkdir(exist_ok=True)
-    checks.ALWAYS_DIR.mkdir(exist_ok=True)
-    checks.SKILLS_LIBRARY.mkdir(exist_ok=True)
+    common.migrate_legacy_layout()
+    factory.RUNS_DIR.mkdir(parents=True, exist_ok=True)
+    checks.ALWAYS_DIR.mkdir(parents=True, exist_ok=True)
+    checks.SKILLS_LIBRARY.mkdir(parents=True, exist_ok=True)
     ThreadingHTTPServer.allow_reuse_address = os.name != "nt"  # on Windows it would let two servers share a port
     srv = ThreadingHTTPServer((a.host, a.port), Handler)
     srv.daemon_threads = True
+    PHONE.base_port = a.port
+    if a.phone:
+        PHONE.start()
+    if a.awake and AWAKE.supported():
+        AWAKE.start("runs")
     threading.Thread(target=deploy.detect_connectors, daemon=True).start()  # warm the connector check: it takes a few seconds
     print(f"Software Factory dashboard: http://{a.host}:{a.port}")
     try:
@@ -512,6 +707,8 @@ def main(argv=None):
     except KeyboardInterrupt:
         pass
     finally:
+        AWAKE.stop()
+        PHONE.stop()
         for run_id in list(APP_PROCS):
             stop_app(run_id)
 

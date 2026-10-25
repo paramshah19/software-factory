@@ -305,6 +305,16 @@ td.num{white-space:nowrap}
   header{grid-template-columns:1fr;gap:14px}
 }
 @media (max-width:640px){.wrap{padding:16px}.rail{grid-template-columns:repeat(2,minmax(0,1fr))!important}}
+/* phone view: what only the computer may do is hidden (the server refuses it as well) */
+body.remote #skills-btn, body.remote #always-btn, body.remote #new-run, body.remote #deploy, body.remote #myapp, body.remote #g-open, body.remote #clock{display:none!important}
+@media (max-width:760px){.hud{flex-wrap:wrap;gap:8px;width:100%}.hud select{max-width:100%}}
+#phone-btn .dot{display:inline-block;margin-left:8px;background:var(--signal);box-shadow:0 0 8px var(--signal)}
+.pp-sec{border:1px solid var(--line);border-radius:var(--r);padding:16px;margin:14px 0;background:var(--panel)}
+.pp-sec h3{margin:0 0 6px;font-size:15px}.pp-sec p{margin:6px 0;color:var(--ink-2);line-height:1.5}
+.pp-row{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-top:10px}
+.pp-pin{font:600 34px var(--mono);letter-spacing:.3em;margin:6px 0}
+.pp-qr{width:208px;height:208px;border-radius:12px;overflow:hidden;background:#fff;flex:none}.pp-qr svg{width:100%;height:100%;display:block}
+.pp-on{color:var(--signal)}.pp-warn{color:var(--owner)}
 @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
 </style>
 </head>
@@ -322,6 +332,7 @@ td.num{white-space:nowrap}
     <div class="hud">
       <span class="chip" title="Live stream from the run folder"><span class="dot" id="live-dot"></span><span id="live-txt">offline</span></span>
       <span class="chip" title="The driver is the process that runs the agents for this run"><span class="dot" id="gw-dot"></span>driver</span>
+      <button class="btn" id="phone-btn" title="Phone view and keep-awake">Phone &amp; power<span class="dot" id="pp-dot" hidden></span></button>
       <button class="btn" id="skills-btn">Skills</button>
       <button class="btn" id="always-btn">Always-use docs</button>
       <button class="btn go" id="new-run">New run</button>
@@ -843,6 +854,10 @@ async function openNewRun() {
         <p class="hint">Built clean-room from public information only: the same behaviour, but your own name, look and code. Nothing is copied. Screenshots of the other product can go under Reference photos below.</p>
       </div>
       <p class="hint">An idea and a spec can both be given. With "generate ideas", your idea (if any) becomes the theme.</p></div>
+    <div class="grp"><span class="micro">About the app (optional, but it makes the result much better)</span>
+      <label>App context <small>(who it is for, what it is for, anything it must respect)</small><textarea id="nr-context" maxlength="4000" placeholder="e.g. For busy parents who track chores for 2 to 4 kids. Used on a phone, mostly one-handed. Calm and friendly, no jargon, no ads."></textarea></label>
+      <label>First-open experience <small>(what the user should see and do the first time they open it)</small><textarea id="nr-firstopen" maxlength="2000" placeholder="e.g. A short welcome screen with the app name and one sentence on what it does, then 3 quick questions (name, goal, reminder time), then the home screen with a friendly empty state. No sign-up."></textarea></label>
+      <p class="hint">Your words are given to every agent exactly as you write them. The first-open experience becomes a requirement the app is checked against.</p></div>
     <div class="grp"><span class="micro">Optional extras</span>
       <label>Links to products like it <small>(one per line)</small><textarea id="nr-prod"></textarea></label>
       <label>Reference photos for the design <small>(up to 8)</small><input type="file" id="nr-photos" accept="image/*" multiple></label>
@@ -868,6 +883,7 @@ async function openNewRun() {
       const photos = [];
       for (const f of [...$("#nr-photos").files].slice(0, 8)) photos.push({name: f.name, data: await readFile(f, true)});
       const j = await post("/api/new", {idea, spec, generate: gen, reverse: revOn ? {target: revTarget, scope: $("#nr-revscope").value, links: lines($("#nr-revlinks").value)} : null, product_links: lines($("#nr-prod").value), ref_links: lines($("#nr-ref").value), photos,
+        app_context: $("#nr-context").value.trim() || null, first_open: $("#nr-firstopen").value.trim() || null,
         skills: $("#nr-skills").value.split(",").map(x => x.trim()).filter(Boolean), force_mode: $("#nr-mode").value || null, quality: $("#nr-quality").value, budget_usd: $("#nr-budget").value === "" ? null : Number($("#nr-budget").value)});
       runId = j.run; localStorage.setItem("sf-run", runId); closeDrawer(); connect();
     } catch (e) { err.textContent = e.message; $("#nr-go").disabled = false; }
@@ -942,6 +958,59 @@ async function openSkills() {
     try { await post("/api/skills/delete", {name: b.closest(".skill").dataset.name}); openSkills(); } catch (e) { $("#sk-err").textContent = e.message; }
   });
 }
+/* ---- Phone & power: keep the computer awake, and open the dashboard on your phone (same Wi-Fi, PIN) ---- */
+let isRemote = false, ppTimer = null;
+fetch("/api/info").then(r => r.json()).then(i => { if (i.remote) { isRemote = true; document.body.classList.add("remote"); } }).catch(() => {});
+const clockTime = t => new Date(t * 1000).toLocaleTimeString([], {hour: "2-digit", minute: "2-digit"});
+async function ppStatus() {
+  const [aw, rm] = await Promise.all([fetch("/api/awake").then(r => r.json()).catch(() => ({})),
+    isRemote ? Promise.resolve({on: false}) : fetch("/api/remote").then(r => r.json()).catch(() => ({on: false}))]);
+  $("#pp-dot").hidden = !(aw.on || rm.on);
+  return {aw, rm};
+}
+function ppAwakeHtml(aw) {
+  if (!aw.supported) return `<div class="pp-sec"><h3>Keep my computer awake</h3><p>This computer has no way for the factory to hold it awake (macOS, Windows and Linux with systemd are supported).</p></div>`;
+  const state = aw.on ? `<p class="pp-on"><b>On.</b> ${aw.mode === "runs" ? "Stays awake until every run has finished (at most 12 hours)." : "Stays awake until " + clockTime(aw.until) + "."}</p>`
+    : `<p>Off.${aw.reason ? " It switched off because " + esc(aw.reason) + "." : ""}</p>`;
+  const controls = aw.on ? `<button class="btn warn" id="aw-off">Let it sleep</button>`
+    : `<select id="aw-mode" aria-label="How long"><option value="runs">Until all runs finish</option><option value="2">For 2 hours</option><option value="8">For 8 hours</option></select><button class="btn go" id="aw-on">Keep awake</button>`;
+  return `<div class="pp-sec"><h3>Keep my computer awake</h3><p>Runs take a while, and a computer that falls asleep stops them and drops the phone view. This holds it awake while you are away.</p>${state}
+    <div class="pp-row">${controls}</div><p class="micro" style="margin-top:12px">It stops the computer sleeping; the screen can still turn off. A laptop with its lid closed may still sleep.</p><div class="err" id="aw-err"></div></div>`;
+}
+function ppPhoneHtml(rm) {
+  if (!rm.on) return `<div class="pp-sec"><h3>Phone view</h3><p>Open this dashboard on your phone, on the same Wi-Fi. You watch the build and answer "Needs you" questions. Starting runs, keys and deploying stay on this computer.</p>
+    <label class="check"><input type="checkbox" id="ph-awake" checked> Also keep this computer awake until all runs finish</label>
+    <div class="pp-row"><button class="btn go" id="ph-on">Turn on phone view</button></div><div class="err" id="ph-err"></div></div>`;
+  const where = rm.urls.length ? rm.urls.map(u => `<div class="mono">${esc(u)}</div>`).join("") : `<p class="pp-warn">${esc(rm.note)}</p>`;
+  return `<div class="pp-sec"><h3 class="pp-on">Phone view is on</h3><p>Scan with your phone's camera. It must be on the same Wi-Fi as this computer.</p>
+    <div class="pp-row" style="align-items:flex-start">${rm.qr ? `<div class="pp-qr" role="img" aria-label="QR code to open the dashboard on your phone">${rm.qr}</div>` : ""}
+    <div><p class="micro">Or type this address, then the PIN</p>${where}<div class="pp-pin" aria-label="PIN">${esc(rm.pin)}</div>
+    <p>${rm.signed_in ? rm.signed_in + " phone" + (rm.signed_in > 1 ? "s" : "") + " signed in" : "No phone signed in yet"}</p></div></div>
+    ${rm.rotated_by_attack ? `<p class="pp-warn">Someone entered many wrong PINs, so the PIN was replaced. Scan again.</p>` : ""}
+    <div class="pp-row"><button class="btn" id="ph-new">New PIN (signs phones out)</button><button class="btn warn" id="ph-off">Turn off</button></div>
+    <p class="micro" style="margin-top:12px">This uses plain http on your own network. Use home or office Wi-Fi you trust, not a cafe or hotel. If the phone cannot connect, allow Python through the Windows firewall for private networks when it asks. It turns off by itself when the dashboard stops.</p></div>`;
+}
+async function renderPhone() {
+  if (!$("#pp")) return;
+  const {aw, rm} = await ppStatus();
+  if (!$("#pp")) return;
+  $("#pp").innerHTML = ppAwakeHtml(aw) + (isRemote ? "" : ppPhoneHtml(rm));
+  const act = (id, fn, errId) => { const b = $(id); if (b) b.onclick = async () => { b.disabled = true; try { await fn(); await renderPhone(); } catch (e) { const el = $(errId); if (el) el.textContent = e.message; b.disabled = false; } }; };
+  act("#aw-on", () => { const v = $("#aw-mode").value; return post("/api/awake", v === "runs" ? {on: true, mode: "runs"} : {on: true, mode: "hours", hours: Number(v)}); }, "#aw-err");
+  act("#aw-off", () => post("/api/awake", {on: false}), "#aw-err");
+  act("#ph-on", async () => { const wantAwake = $("#ph-awake").checked; await post("/api/remote", {on: true}); if (wantAwake) await post("/api/awake", {on: true, mode: "runs"}).catch(() => {}); }, "#ph-err");
+  act("#ph-new", () => post("/api/remote", {on: true, rotate: true}), "#ph-err");
+  act("#ph-off", () => post("/api/remote", {on: false}), "#ph-err");
+}
+function openPhone() {
+  openDrawer(isRemote ? "from your phone" : "this computer", "Phone & power", `<div id="pp"></div>`);
+  renderPhone();
+  clearInterval(ppTimer);
+  ppTimer = setInterval(() => { if (!$("#pp")) clearInterval(ppTimer); else if (document.body.classList.contains("open") && document.activeElement?.tagName !== "SELECT") renderPhone(); }, 4000);
+}
+$("#phone-btn").onclick = openPhone;
+ppStatus();
+setInterval(ppStatus, 15000);
 $("#skills-btn").onclick = openSkills;
 $("#new-run").onclick = openNewRun;
 $("#always-btn").onclick = openAlways;

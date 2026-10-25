@@ -16,7 +16,7 @@ You are setting up the Software Factory for the user, in four parts: **1. Welcom
 Greet the user in two or three warm, short sentences: they are about to set up their own software factory, it takes about ten minutes, and you will ask a few questions so it works the way they like.
 
 Meanwhile, behind the scenes:
-1. **Find the factory.** If the current folder (or a parent) has `factory.py` and `scripts/sf.py`, that is `<FACTORY>`. Otherwise clone it: `git clone https://github.com/paramshah19/software-factory "<HOME>/software-factory"` (`<HOME>` = the user's home folder) and tell them where it went.
+1. **Find the factory.** If the current folder (or a parent) has `src/factory.py` and `scripts/sf.py`, that is `<FACTORY>`. Otherwise clone it: `git clone https://github.com/paramshah19/software-factory "<HOME>/software-factory"` (`<HOME>` = the user's home folder) and tell them where it went.
 2. **Check the computer:** `SF doctor --json`. If `git` or `uv` is missing, show the user the `install_steps` from the output, ask them to run them (installing tools is their call), run `doctor` again, and don't continue without both. Keep the rest of the output for Parts 2 and 3: the operating system, the agent command lines found (`agent_command_lines`) and what this computer can build (`can_build`).
 
 ## Part 2: What it is
@@ -56,12 +56,15 @@ End Part 3 with a short summary of their factory: the agent doing the work, defa
 
 ## Part 4: How to run it
 
-1. Start the dashboard: `SF dashboard open`. It runs in the background (no terminal window) and opens in their browser at the address it prints.
+1. Start the dashboard: `SF start`. It runs in the background (no terminal window) and opens as its own app window at the address it prints (`--browser` for their normal browser).
 2. Show them how to use it, briefly:
    - **Start something:** `/software-factory-idea <your idea>` from any folder (or the **New run** button on the dashboard). For example: `/software-factory-idea a habit tracker that shows honest streaks`. Add "cheap" for a Lean run or "best possible" for Max. They can also give links to products they like, design photos, a whole spec, say "give me ideas", or "recreate this feature from that product".
    - **Watch it:** the dashboard opens at the run. **Show live output** shows each agent at work; **Factory console** shows the factory itself.
    - **Decide:** decisions appear under **Needs you** (the tab title changes too). They can also just answer in chat, like "approve it".
    - **Outside services:** if an app uses an AI model, payments (test mode) or email, it works in demo mode first. They add real keys later on the dashboard's **Your app** panel, never in the chat.
    - **Put it online:** after they approve a finished app, the **Deploy** panel offers what fits it, using their own accounts.
+   - **Start it again later, one click:** double-click `Start Software Factory.cmd` (Windows) or `Start Software Factory.command` (macOS) in the factory folder, no terminal needed. Ask whether they want a Desktop icon for it; only if they say yes, run `SF shortcut`.
+   - **On your phone:** the **Phone & power** button turns on the phone view (scan the QR code, same Wi-Fi, PIN protected, off by default). The phone can watch and answer questions, not start runs, add keys or deploy. The same panel has **Keep my computer awake** so a run (and the phone view) isn't cut off by sleep. Only turn these on if they want them.
+   - **About their app:** on **New run** they can write the app's context and what a brand-new user should see and do the first time they open it; the factory builds and checks the app against that.
    - **Change any setting later:** run `/software-factory-setup` again (it keeps what they chose unless they change it).
 3. Finish with one line: **What I did NOT verify:** anything that failed or was skipped during setup. Write "nothing" only if every step passed.

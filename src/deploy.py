@@ -3,7 +3,7 @@
 Single-page apps: Netlify, Vercel, GitHub Pages, or a desktop program (Electron). Apps with a server: a Docker image
 (local), or Render (a public address, set up from a one-click link the owner opens with their own Render account).
 
-This is a separate step after the owner has approved a run, started on purpose from the dashboard or `factory.py deploy`.
+This is a separate step after the owner has approved a run, started on purpose from the dashboard or `src/factory.py deploy`.
 The factory never handles credentials: it uses whatever is already signed in on this computer (command-line tools) or connected
 in Claude (connectors), and when something is not signed in it says so and tells the owner what to do.
 """

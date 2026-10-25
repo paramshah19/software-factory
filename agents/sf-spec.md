@@ -26,7 +26,7 @@ If your prompt contains OWNER FEEDBACK, this is a revision: update the existing 
    - Screens (if any): every screen, its URL or route, what each shows and what each control does.
    - Files/data: formats with a concrete example.
    - How to run it, e.g. `uv run --project app <command> ...`.
-5. **Acceptance criteria**: numbered `AC-1`, `AC-2`, … Each is observable through the interface contract and checkable by an automated test (given / when / then). Aim for 8–20. Include error and edge cases. For apps with screens, include criteria about what the screens show and the main flows.
+5. **Acceptance criteria**: if the brief has a `## First-open experience` section, the screens and the criteria MUST cover it exactly as the owner wrote it: describe the first screen a new user sees, every step they are asked to take, and what they land on afterwards, with at least one AC per step (a brand-new user with no saved data). Never drop or soften it; if it conflicts with something else, keep the owner's version and note the conflict under Open questions. Use the brief's `## App context` to decide who the users are and what tone fits. Numbered `AC-1`, `AC-2`, … Each is observable through the interface contract and checkable by an automated test (given / when / then). Aim for 8–20. Include error and edge cases. For apps with screens, include criteria about what the screens show and the main flows.
 6. **Non-functional requirements**: performance bounds, must work on this computer's operating system (the host line of your protocol), allowed dependencies.
 7. **Tech stack**: Python 3.12 + uv + pytest unless there's a strong reason.
 8. **Open questions**: anything you assumed, with your assumption for each.

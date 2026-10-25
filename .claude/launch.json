@@ -4,7 +4,7 @@
     {
       "name": "factory-dashboard",
       "runtimeExecutable": "uv",
-      "runtimeArgs": ["run", "dashboard.py"],
+      "runtimeArgs": ["run", "src/dashboard.py"],
       "port": 8787
     }
   ]
