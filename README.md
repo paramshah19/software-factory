@@ -13,6 +13,9 @@ inputs ─► [generate ideas ─► you choose 1, or Random pick] ─► intake
 
 The full flowchart is in [`docs/flowchart.pdf`](docs/flowchart.pdf) ([PNG](docs/flowchart.png)).
 
+![The Software Factory dashboard during a full-pipeline build: the pipeline, the agents working, cost and progress](docs/dashboard.png)
+*The dashboard mid-build (a demo run, to show the layout). Every agent's live output, the pipeline, the cost so far and a "Needs you" panel for the few decisions that are yours.*
+
 ## Quick start
 
 You need: **git**, **uv** ([install](https://docs.astral.sh/uv/getting-started/installation/)) and a coding agent you are signed in to.
@@ -266,6 +269,15 @@ Once a finished app is approved, a **Deploy** panel appears in the dashboard (or
 - Agents work in the run folder by instruction, not by a hard sandbox. Read the report before running a product.
 - At most 3 builders run at once (`MAX_PARALLEL`). Each agent has a time limit; fix loops stop after 2 rounds.
 - While building, products run locally and in fake mode: no keys, no calls to paid services, no deployment. Your keys are used only when you open the app yourself; deploying only happens when you press a button after approving (see **Deploy**).
+
+## Not tried yet (help wanted)
+Everything here is built and covered by automated tests, but the author has only run the factory end to end on one Windows computer with Claude Code. These five have **not** been tried for real, so if you try one, please open an issue saying what worked and what broke:
+
+1. **Phone view on a real phone.** The QR code, the PIN sign-in and answering a "Needs you" question from a phone. It was only checked from the same computer. (Windows may need to allow Python through the firewall for private networks.)
+2. **One-click start on macOS and Linux.** `Start Software Factory.command`, the Desktop shortcut, and keep-awake (`caffeinate`, `systemd-inhibit`) were written for them but only ever run on Windows.
+3. **Phone notifications through ntfy** (`sf.py push on`). The code and the request it sends are tested against a stand-in server, never the real ntfy app on a phone.
+4. **The phone view away from home over Tailscale.** The address detection is tested with a fake Tailscale, not a real one.
+5. **Codex, or another agent, as the engine.** Built from each tool's documented output and tested with recorded output and a stand-in agent, not run on a real Codex or Gemini install. Also not yet run for real: building a Godot game, a phone app (Expo) or a desktop app (Qt), and deploying to Netlify, Vercel, Render or Docker.
 
 ## Tests
 `uv run pytest -q` runs the suite: the pipeline with fake agents but real git, pytest and state machine; the engines (Codex output parsing, a stand-in custom agent); the setup helper; the automatic checks and the dashboard UI in a real Edge browser (skipped where Edge isn't installed). Real agents are never called by the tests.
