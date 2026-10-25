@@ -18,6 +18,9 @@ Every day:
     sf.py start --browser --phone     ...in your normal browser, with the phone view on (same Wi-Fi, PIN)
     sf.py shortcut                    put a Software Factory icon on your Desktop (double-click = sf.py start)
     sf.py phone on|off|status         the dashboard on your phone; sf.py awake on|off|status keeps the computer awake
+    sf.py push on|off|test|status     a notification on your phone (free ntfy app) when a run needs you
+    sf.py clean [--apply]             free disk space: remove what finished runs can rebuild (shows first)
+    sf.py configure --daily-cap 25 --monthly-cap 200    most you want to spend per day / month across all runs
     sf.py idea "a habit tracker"      start a run, start the dashboard hidden if needed, open it
     sf.py dashboard start|stop|status|open
     sf.py status [RUN]                where a run is / what is waiting on you
@@ -235,6 +238,9 @@ def cmd_configure(a) -> int:
         cfg["notify"] = a.notify == "on"
     if a.open_as:
         cfg["open_as"] = a.open_as
+    for key, val in (("daily", a.daily_cap), ("monthly", a.monthly_cap)):
+        if val is not None:
+            cfg.setdefault("limits", {})[key] = max(0.0, min(100000.0, val))
     if a.brand_file:  # becomes an always-use document: every agent of every run reads it
         text = Path(a.brand_file).read_text(encoding="utf-8").strip()
         dest = Path(cfg["factory_dir"]) / "workspace" / "always-use" / "brand.md"
@@ -725,6 +731,46 @@ def cmd_phone(a) -> int:
     return 0
 
 
+def cmd_push(a) -> int:
+    """Phone notifications through ntfy: a short push when a run needs you, anywhere (needs the free ntfy app)."""
+    fdir = factory_dir()
+    sys.path.insert(0, str(fdir / "src"))
+    os.environ["SF_CONFIG"] = str(config_path())
+    import push  # noqa: E402  (the factory's own module: it reads and writes the same config file)
+    try:
+        if a.action == "on":
+            push.enable(a.server)
+        elif a.action == "off":
+            push.disable()
+        elif a.action == "test" and not push.settings():
+            print("Notifications are off. Switch them on first: sf.py push on")
+            return 1
+    except ValueError as e:
+        print(e)
+        return 1
+    cfg = push.settings()
+    if a.action == "test":
+        print("Sent. Your phone should buzz in a moment." if push.send("Software Factory", "Test: this phone will hear from your factory", urgent=True)
+              else "Could not reach the notification server (offline, or a wrong address).")
+        return 0
+    if a.json:
+        out({"on": bool(cfg), **cfg, "subscribe": push.subscribe_url(cfg)}, True)
+    elif not cfg:
+        print("Phone notifications are off. Switch on: sf.py push on")
+    else:
+        print(f"Phone notifications are on. In the free ntfy app (iPhone, Android), subscribe to the topic:\n  {cfg['topic']}\n"
+              f"(server {cfg['server']}). Treat the topic like a password. Only generic lines are sent, like \"needs you: Approve the spec\". "
+              "Test it: sf.py push test")
+    return 0
+
+
+def cmd_clean(a) -> int:
+    """Free disk space: remove what finished runs can rebuild by themselves (shows first, changes nothing without --apply)."""
+    rc, text = factory_py(["clean", *(["--apply"] if a.apply else [])], 1800)
+    print(text.strip())
+    return rc
+
+
 def cmd_awake(a) -> int:
     """Keep this computer awake while the factory works (the dashboard holds it; it lets go when runs finish)."""
     if a.action in ("on", "off") and not dashboard_status()["running"]:
@@ -814,6 +860,8 @@ def main(argv: Optional[list] = None) -> int:
     c.add_argument("--budget-multi", type=float, help="default spending cap in dollars for full-pipeline runs (0 = no cap)")
     c.add_argument("--notify", choices=["on", "off"], help="desktop notifications when a run needs you")
     c.add_argument("--open-as", choices=["app", "browser"], help="open the dashboard as its own app window (default) or in your normal browser")
+    c.add_argument("--daily-cap", type=float, help="most you want to spend per day across all runs, in dollars (0 = no cap); checked when a new run starts")
+    c.add_argument("--monthly-cap", type=float, help="most you want to spend per month across all runs, in dollars (0 = no cap)")
     c.add_argument("--brand-file", help="a text file with brand rules (colours, fonts, tone) every app must follow")
     c.add_argument("--models", help="strong=MODEL,standard=MODEL,fast=MODEL (non-Claude engines; empty = the agent's default)")
     c.add_argument("--command", help='custom engine: JSON list, the non-interactive command, e.g. \'["gemini", "--yolo"]\'')
@@ -842,6 +890,11 @@ def main(argv: Optional[list] = None) -> int:
     sc.add_argument("--dir", help="put it in this folder instead of the Desktop")
     ph = sub.add_parser("phone", parents=[common], help="phone view: on, off or status")
     ph.add_argument("action", nargs="?", choices=["on", "off", "status"], default="status")
+    pu = sub.add_parser("push", parents=[common], help="phone notifications through ntfy: on, off, test or status")
+    pu.add_argument("action", nargs="?", choices=["on", "off", "test", "status"], default="status")
+    pu.add_argument("--server", help="your own ntfy server instead of https://ntfy.sh")
+    cn = sub.add_parser("clean", parents=[common], help="free disk space: shows what finished runs can rebuild; --apply removes it")
+    cn.add_argument("--apply", action="store_true")
     aw = sub.add_parser("awake", parents=[common], help="keep this computer awake: on, off or status")
     aw.add_argument("action", nargs="?", choices=["on", "off", "status"], default="status")
     aw.add_argument("--hours", type=float, help="stay awake this many hours (default: until all runs finish)")
@@ -877,7 +930,8 @@ def main(argv: Optional[list] = None) -> int:
         return rc
     return {"doctor": cmd_doctor, "configure": cmd_configure, "prepare": cmd_prepare, "agents": cmd_agents, "check": cmd_check,
             "install-skills": cmd_install_skills, "connections": cmd_connections, "dashboard": cmd_dashboard, "idea": cmd_idea,
-            "status": cmd_status, "start": cmd_start, "shortcut": cmd_shortcut, "phone": cmd_phone, "awake": cmd_awake}[a.cmd](a)
+            "status": cmd_status, "start": cmd_start, "shortcut": cmd_shortcut, "phone": cmd_phone, "awake": cmd_awake,
+            "push": cmd_push, "clean": cmd_clean}[a.cmd](a)
 
 
 if __name__ == "__main__":

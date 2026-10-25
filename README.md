@@ -71,7 +71,8 @@ software-factory/
 └─ workspace/    EVERYTHING THAT IS YOURS (kept out of git, safe to back up):
    ├─ runs/            one folder per run: the product, its documents, screenshots, logs
    ├─ always-use/      your standing documents (brand colours, design rules)
-   └─ skills-library/  skills you dropped into the dashboard
+   ├─ skills-library/  skills you dropped into the dashboard
+   └─ presets.json     your saved app presets
 ```
 Your settings and keys live outside the folder, in `~/.software-factory/`. Updating the factory (`git pull`) never touches `workspace/` or your settings. Older installs that kept `runs/`, `always-use/` and `skills-library/` next to the code are moved into `workspace/` automatically the next time the dashboard or driver starts.
 
@@ -136,7 +137,7 @@ The choice lives in `~/.software-factory/config.json`, written by `sf.py configu
 
 ## What you give it
 - **Required, at least one:** an idea, a whole spec (both is fine), **Generate ideas** (the agent proposes 5; you choose one or press **Random pick**), or **Reverse engineer**: name a feature or a whole app from another product and the factory studies it from public information (docs, help pages, demos, your screenshots) and builds an original version: same behaviour, your own name, look and code (clean-room: nothing is copied, no logins or paywalls).
-- **About the app (optional, worth filling in):** *App context* (who it is for, what it is for, tone, anything it must respect) and the **first-open experience** (what a brand-new user should see and do the first time they open the app, for example "a welcome screen, three quick questions, then the home screen, no sign-up"). Both are given to every agent word for word. The first-open experience becomes numbered acceptance criteria that the builder, the tests and the UI reviewer check. In the idea skill or on the command line: `--context "..."` and `--first-open "..."`.
+- **About the app (optional, worth filling in):** *App context* (who it is for, what it is for, tone, anything it must respect) and the **first-open experience** (what a brand-new user should see and do the first time they open the app, for example "a welcome screen, three quick questions, then the home screen, no sign-up"). Both are given to every agent word for word. The first-open experience becomes numbered acceptance criteria that the builder, the tests and the UI reviewer check. In the idea skill or on the command line: `--context "..."` and `--first-open "..."`. For apps you build often, **save the two boxes as a preset** on the New run form (stored in `workspace/presets.json`) and fill them again with one click.
 - **Optional extras:** links to products like it, reference photos for the design, reference links, and skills you want considered. Drop skill files or whole skill folders into the dashboard's **Skills** library (or type a skill's name when starting a run).
 - **Always-use documents** (optional, saved once, in `workspace/always-use/`): brand colours, design rules, preferences. Every agent in every run reads them. Edit them from the dashboard (**Always-use docs**) or just drop `.md` files in that folder.
 
@@ -214,7 +215,13 @@ A live view of a run: the pipeline rail for the chosen path, each active agent's
   - It needs a fresh 6-digit **PIN** each time (the QR code carries it). A wrong PIN locks that device for a minute, and many wrong PINs anywhere replace the PIN.
   - The phone can **watch and answer** (approve, reject, choose, resume) and keep the computer awake. It **cannot** start runs, store keys, deploy, open apps or edit your documents and skills: those stay on the computer.
   - It is plain http on your own network, so use home or office Wi-Fi you trust, not a cafe or hotel. If the phone can't connect, allow Python through the firewall for private networks when Windows asks.
+  - **Away from home:** install [Tailscale](https://tailscale.com) (free) on this computer and your phone, sign in on both, then turn the phone view off and on again. A second, private address (100.x.x.x) appears in the panel and works on any network, over an encrypted private connection, with nothing opened to the public internet. The PIN still applies. The computer must stay on (use keep awake).
 - **Keep my computer awake:** a computer that falls asleep stops your runs and drops the phone view. This holds it awake *until all runs finish* (default), or for 2 or 8 hours, at most 12 hours. It stops sleep, not the screen turning off, and a laptop with its lid closed can still sleep. `sf.py awake on|off|status`. Works on Windows, macOS (`caffeinate`) and Linux with systemd.
+- **Phone notifications** (same panel, or `sf.py push on`): a buzz on your phone when a run needs you or hits a usage limit, anywhere, even on mobile data. It uses the free [ntfy](https://ntfy.sh) app: install it, press *Subscribe to topic*, and type the random topic the factory gives you. Only a generic line is sent ("needs you: Approve the spec"), never your idea, code, keys or run title. Anyone who learns the topic could read those lines, so treat it like a password, or run your own ntfy server (`sf.py push on --server https://...`). Off until you switch it on. `sf.py push test` checks it.
+
+### Spending caps and clean-up
+- **Daily and monthly caps across all runs:** `sf.py configure --daily-cap 25 --monthly-cap 200` (0 = no cap). A new run is refused with a plain message once a cap is used up; a run that is already going is never cut off (its own per-run cap covers it). The header shows *Today $x / $cap*. A run's cost counts on the day it started.
+- **Free disk space:** `sf.py clean` lists what finished runs can rebuild by themselves (virtual environments, `node_modules`, build caches, agent worktrees) and how much space that is. `sf.py clean --apply` removes it. It never touches an app's own files, git history, report or screenshots, only finished runs that are not running, and a finished app simply reinstalls its packages next time you open it.
 
 ## What a run produces
 `workspace/runs/<run-id>/` (git-ignored; the product has its own git repo):

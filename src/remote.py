@@ -16,8 +16,12 @@ Safety, in plain words:
 from __future__ import annotations
 
 import hmac
+import os
+import re
 import secrets
+import shutil
 import socket
+import subprocess
 import threading
 import time
 from typing import Optional
@@ -50,6 +54,26 @@ def lan_addresses() -> list[str]:
     except OSError:
         pass
     return [ip for ip in found if not ip.startswith(("127.", "169.254.", "0."))]
+
+
+def tailscale_address() -> Optional[str]:
+    """This computer's private Tailscale address (100.x.y.z), or None when Tailscale isn't installed or isn't connected.
+    With Tailscale (free, https://tailscale.com) on this computer AND your phone, the phone view also works away from
+    home, over an encrypted private network, with nothing opened to the public internet."""
+    program_files = os.environ.get("ProgramFiles", "C:/Program Files")
+    candidates = [shutil.which("tailscale"), os.path.join(program_files, "Tailscale", "tailscale.exe"), "/Applications/Tailscale.app/Contents/MacOS/Tailscale"]
+    for exe in filter(None, candidates):
+        if not os.path.exists(exe):
+            continue
+        try:
+            out = subprocess.run([exe, "ip", "-4"], capture_output=True, text=True, timeout=4,
+                                 creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0)).stdout
+        except (OSError, subprocess.SubprocessError):
+            continue
+        for line in out.splitlines():
+            if re.fullmatch(r"100\.\d{1,3}\.\d{1,3}\.\d{1,3}", line.strip()):
+                return line.strip()
+    return None
 
 
 class RemoteAuth:

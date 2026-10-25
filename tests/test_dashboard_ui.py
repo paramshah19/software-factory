@@ -245,3 +245,18 @@ def test_the_report_shows_its_screenshots(site, page):
     page.get_by_role("button", name="Report", exact=False).first.click()
     page.wait_for_selector(".mdimg")
     assert page.evaluate("document.querySelector('.mdimg').naturalWidth > 0") and page.errors == []
+
+
+def test_header_keeps_room_for_the_run_title_at_every_width(site, page):
+    long_title = "A pomodoro timer web app: focus and break timers, a task list to attach sessions to, daily statistics"
+    site.make(gate=None, status="running", title=long_title)
+    page.goto(site.url + "/")
+    page.wait_for_selector("#run-title")
+    for width in (1440, 1180, 1024, 820, 390):
+        page.set_viewport_size({"width": width, "height": 900})
+        page.wait_for_timeout(150)
+        box = page.eval_on_selector("#run-title", "e => { const r = e.getBoundingClientRect(); return {w: r.width, left: r.left, right: r.right} }")
+        assert box["w"] >= min(width * 0.6, 520), f"title squeezed to {box['w']}px at {width}px wide"
+        wide = page.evaluate("width => [...document.querySelectorAll('body *')].filter(e => e.getBoundingClientRect().right > width + 1 && !e.closest('.drawer') && getComputedStyle(e).position !== 'fixed').slice(0, 6).map(e => e.tagName + '#' + e.id + '.' + e.className + ' ' + Math.round(e.getBoundingClientRect().right))", width)
+        assert page.evaluate("document.documentElement.scrollWidth") <= width + 1, f"sideways scrolling at {width}px: {wide}"
+        assert page.eval_on_selector("#phone-btn", "e => e.getBoundingClientRect().right") <= width, f"Phone & power button off screen at {width}px"

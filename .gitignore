@@ -1,9 +1,9 @@
 .pytest_cache/
 .venv/
 __pycache__/
-# everything that is yours stays out of git
-workspace/runs/
-workspace/skills-library/
+# everything that is yours stays out of git (runs, skills library, presets, your always-use documents)
+workspace/*
+!workspace/always-use/
 workspace/always-use/*
 !workspace/always-use/README.md
 # older layout (before workspace/)

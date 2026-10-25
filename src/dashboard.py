@@ -35,8 +35,11 @@ import common
 import deploy
 import factory
 import keys
+import presets
+import push
 import qr
 import remote
+import spend
 
 HERE = Path(__file__).resolve().parent   # src/
 ROOT = HERE.parent                       # the folder you cloned
@@ -336,6 +339,26 @@ def act(path: str, body: dict) -> tuple[int, dict]:
             return 200, AWAKE.start(str(body.get("mode") or "runs"), float(body.get("hours") or 2)) if body.get("on") else AWAKE.stop()
         except (RuntimeError, ValueError) as e:
             return 400, {"error": str(e)}
+    if path == "/api/presets/save":
+        try:
+            return 200, {"presets": presets.save(common.WORKSPACE, body.get("name"), body.get("app_context"), body.get("first_open"))}
+        except ValueError as e:
+            return 400, {"error": str(e)}
+    if path == "/api/presets/delete":
+        return 200, {"presets": presets.delete(common.WORKSPACE, str(body.get("name", "")))}
+    if path == "/api/push":   # phone notifications through ntfy (this computer only)
+        try:
+            if body.get("test"):
+                if not push.settings():
+                    return 400, {"error": "switch notifications on first"}
+                return 200, {**push_status(), "sent": push.send("Software Factory", "Test: this phone will hear from your factory", urgent=True)}
+            if body.get("on") is False:
+                push.disable()
+            else:
+                push.enable(body.get("server") or None)
+        except ValueError as e:
+            return 400, {"error": str(e)}
+        return 200, push_status()
     if path == "/api/remote":   # the phone view on/off (this computer only: the phone cannot switch itself on or rotate its own PIN)
         try:
             if body.get("on") is False:
@@ -423,6 +446,11 @@ def any_run_active() -> bool:
 AWAKE = awake.KeepAwake(busy=any_run_active)
 
 
+def push_status() -> dict:
+    cfg = push.settings()
+    return {"on": bool(cfg), "topic": cfg.get("topic", ""), "server": cfg.get("server", push.DEFAULT_SERVER), "subscribe": push.subscribe_url(cfg)}
+
+
 class PhoneView:
     """The second, network-facing server. Off until you switch it on; see remote.py for how it stays safe."""
 
@@ -432,6 +460,7 @@ class PhoneView:
         self.port: Optional[int] = None
         self.base_port = 8787
         self.lock = threading.Lock()
+        self._ts: tuple = (0.0, None)   # (when Tailscale was last asked, its address)
 
     @property
     def on(self) -> bool:
@@ -470,7 +499,10 @@ class PhoneView:
         urls = [f"http://{ip}:{self.port}" for ip in remote.lan_addresses()]
         pin = self.auth.pin or ""
         link = f"{urls[0]}/?pin={pin}" if urls else ""
-        return {"on": True, "urls": urls, "pin": pin, "link": link, "port": self.port, "signed_in": self.auth.signed_in(),
+        if time.time() - self._ts[0] > 60:   # asking Tailscale takes a moment: remember the answer for a minute
+            self._ts = (time.time(), remote.tailscale_address())
+        away = f"http://{self._ts[1]}:{self.port}" if self._ts[1] else ""
+        return {"on": True, "urls": urls, "away": away, "pin": pin, "link": link, "port": self.port, "signed_in": self.auth.signed_in(),
                 "qr": qr.svg(link, dark="#10130a", light="#ffffff") if link else "", "rotated_by_attack": self.auth.rotated_by_attack,
                 "note": "" if urls else "No local network found: connect this computer to Wi-Fi or a cable first."}
 
@@ -537,7 +569,12 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(204, b"", "image/x-icon")
         if url.path == "/api/info":  # lets scripts/sf.py confirm this is the factory it expects
             return self._json({"app": "software-factory", "factory_dir": factory.posix(ROOT), "engine": factory.engines.describe(),
-                               "default_quality": factory.default_quality(), "remote": self.remote})
+                               "default_quality": factory.default_quality(), "remote": self.remote,
+                               "spend": spend.summary(factory.RUNS_DIR)})
+        if url.path == "/api/presets":
+            return self._json({"presets": presets.load(common.WORKSPACE)})
+        if url.path == "/api/push":
+            return self._json(push_status())
         if url.path == "/api/state":
             return self._json(snapshot(run))
         if url.path == "/api/doc":

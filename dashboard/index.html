@@ -44,15 +44,20 @@ button,select,textarea{font:inherit;color:inherit}
 :focus-visible{outline:2px solid var(--signal);outline-offset:2px}
 
 /* ---------- header */
-header{display:grid;grid-template-columns:auto 1fr auto;gap:28px;align-items:end;padding-bottom:20px;border-bottom:1px solid var(--line)}
-.brand{display:flex;align-items:center;gap:12px}
+header{display:grid;grid-template-columns:minmax(0,1fr) auto;grid-template-areas:"brand hud" "title title";gap:14px 24px;align-items:center;padding-bottom:18px;border-bottom:1px solid var(--line)}
+.brand{grid-area:brand;display:flex;align-items:center;gap:12px}
+header .title{grid-area:title}
+#run-id{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .mark{width:34px;height:34px;border:1px solid var(--line-2);border-radius:8px;display:grid;place-items:center;font-family:var(--mono);font-weight:500;font-size:12px;letter-spacing:.04em;position:relative}
 .mark::after{content:"";position:absolute;right:-3px;top:-3px;width:7px;height:7px;border-radius:50%;background:var(--signal);box-shadow:0 0 12px var(--signal)}
 .brand b{display:block;font-weight:600;font-size:15px;letter-spacing:.01em}
+.brand b,.brand .micro{white-space:nowrap}
+#spend-chip.over{color:var(--bad)}.pp-sec .field{width:100%;margin-top:8px}.pp-topic{font:600 15px var(--mono);word-break:break-all;margin:6px 0;color:var(--ink)}
+.preset-row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}.preset-row select{flex:1 1 180px;min-width:0}
 .title{min-width:0}
 .title h1{margin:4px 0 0;font-size:22px;font-weight:500;letter-spacing:-.01em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .title h1 em{font-style:normal;color:var(--mute)}
-.hud{display:flex;align-items:center;gap:18px}
+.hud{grid-area:hud;display:flex;align-items:center;justify-content:flex-end;flex-wrap:wrap;gap:10px 14px}
 .chip{display:flex;align-items:center;gap:8px;font-family:var(--mono);font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-2);white-space:nowrap}
 .dot{width:7px;height:7px;border-radius:50%;background:var(--mute)}
 .dot.on{background:var(--signal);box-shadow:0 0 0 0 var(--signal);animation:ping 1.8s infinite}
@@ -302,12 +307,12 @@ td.num{white-space:nowrap}
   .grid{grid-template-columns:1fr}
   .rail{grid-template-columns:repeat(4,minmax(0,1fr))!important;row-gap:14px}
   .col::after{display:none!important}
-  header{grid-template-columns:1fr;gap:14px}
 }
 @media (max-width:640px){.wrap{padding:16px}.rail{grid-template-columns:repeat(2,minmax(0,1fr))!important}}
+@media (max-width:640px){#cards-table th:nth-child(n+4),#cards-table td:nth-child(n+4){display:none}#cards-table th,#cards-table td{padding-left:12px;padding-right:12px}}
 /* phone view: what only the computer may do is hidden (the server refuses it as well) */
 body.remote #skills-btn, body.remote #always-btn, body.remote #new-run, body.remote #deploy, body.remote #myapp, body.remote #g-open, body.remote #clock{display:none!important}
-@media (max-width:760px){.hud{flex-wrap:wrap;gap:8px;width:100%}.hud select{max-width:100%}}
+@media (max-width:820px){header{grid-template-columns:minmax(0,1fr);grid-template-areas:"brand" "hud" "title"}.hud{justify-content:flex-start}.hud select{max-width:100%;min-width:0;flex:1 1 180px}}
 #phone-btn .dot{display:inline-block;margin-left:8px;background:var(--signal);box-shadow:0 0 8px var(--signal)}
 .pp-sec{border:1px solid var(--line);border-radius:var(--r);padding:16px;margin:14px 0;background:var(--panel)}
 .pp-sec h3{margin:0 0 6px;font-size:15px}.pp-sec p{margin:6px 0;color:var(--ink-2);line-height:1.5}
@@ -336,6 +341,7 @@ body.remote #skills-btn, body.remote #always-btn, body.remote #new-run, body.rem
       <button class="btn" id="skills-btn">Skills</button>
       <button class="btn" id="always-btn">Always-use docs</button>
       <button class="btn go" id="new-run">New run</button>
+      <span class="chip mono" id="spend-chip" hidden></span>
       <span class="chip mono" id="clock">--:--:--</span>
       <select id="run-select" aria-label="Choose run"></select>
     </div>
@@ -363,7 +369,7 @@ body.remote #skills-btn, body.remote #always-btn, body.remote #new-run, body.rem
       </section>
       <section class="panel">
         <div class="ph"><h2>Cards</h2><span class="acts"><button class="tgl" id="cards-toggle"></button><span class="micro" id="card-count"></span></span></div>
-        <table>
+        <table id="cards-table">
           <thead><tr><th>Card</th><th style="width:108px">Bot</th><th style="width:104px">State</th><th style="width:58px">Tries</th><th style="width:74px">Reviews</th><th style="width:78px">Time</th></tr></thead>
           <tbody id="cards"></tbody>
         </table>
@@ -857,7 +863,9 @@ async function openNewRun() {
     <div class="grp"><span class="micro">About the app (optional, but it makes the result much better)</span>
       <label>App context <small>(who it is for, what it is for, anything it must respect)</small><textarea id="nr-context" maxlength="4000" placeholder="e.g. For busy parents who track chores for 2 to 4 kids. Used on a phone, mostly one-handed. Calm and friendly, no jargon, no ads."></textarea></label>
       <label>First-open experience <small>(what the user should see and do the first time they open it)</small><textarea id="nr-firstopen" maxlength="2000" placeholder="e.g. A short welcome screen with the app name and one sentence on what it does, then 3 quick questions (name, goal, reminder time), then the home screen with a friendly empty state. No sign-up."></textarea></label>
-      <p class="hint">Your words are given to every agent exactly as you write them. The first-open experience becomes a requirement the app is checked against.</p></div>
+      <div class="preset-row"><select id="nr-preset" aria-label="Saved presets"><option value="">Saved presets…</option></select>
+        <input class="fld" id="nr-presetname" placeholder="name to save as" style="flex:1 1 140px;min-width:0"><button class="btn" id="nr-presetsave" type="button">Save as preset</button><button class="btn warn" id="nr-presetdel" type="button" hidden>Delete</button></div>
+      <p class="hint">Your words are given to every agent exactly as you write them. The first-open experience becomes a requirement the app is checked against. Presets save these two boxes for apps you build often.</p><div class="err" id="nr-preseterr"></div></div>
     <div class="grp"><span class="micro">Optional extras</span>
       <label>Links to products like it <small>(one per line)</small><textarea id="nr-prod"></textarea></label>
       <label>Reference photos for the design <small>(up to 8)</small><input type="file" id="nr-photos" accept="image/*" multiple></label>
@@ -865,12 +873,29 @@ async function openNewRun() {
       <label>Skills you want considered <small>(comma separated; the skill agent still checks each one fits)</small><input class="fld" id="nr-skills" list="skill-list" placeholder="e.g. frontend-design, ui-ux-pro-max"><datalist id="skill-list">${skills.map(s => `<option value="${esc(s)}">`).join("")}</datalist></label>
       <label>Spending cap in dollars <small>(blank = your default from setup; 0 = no cap)</small><input class="fld" id="nr-budget" type="number" min="0" step="1" placeholder="default"></label>
       <label>Quality <small>(Lean for experiments; Max uses the strongest models everywhere and costs most)</small><select id="nr-quality"><option value="balanced">Balanced</option><option value="lean">Lean: cheapest</option><option value="max">Max: strongest</option></select></label>
-      <label>Build mode<select id="nr-mode"><option value="">Let the decider choose</option><option value="single">Single agent</option><option value="multi">Full pipeline</option></select></label></div>
+      <label>Build mode <small>(forcing a mode skips the decider's advice; the full pipeline costs several times more, so leave this on the decider unless you are testing)</small><select id="nr-mode"><option value="">Let the decider choose</option><option value="single">Single agent</option><option value="multi">Full pipeline</option></select></label></div>
     <p class="hint">Your always-use documents (brand colours, design rules) apply automatically. <a id="nr-always">Edit them</a>. The skill agent also looks at your skills library and the skills installed here, and uses only what fits. <a id="nr-skills-link">Manage skills</a></p>
     <div class="btns"><button class="btn go" id="nr-go">Start run</button></div><div class="err" id="nr-err"></div></div>`);
   $("#nr-always").onclick = openAlways;
   $("#nr-skills-link").onclick = openSkills;
   fetch("/api/info").then(r => r.json()).then(i => { if (i.default_quality && $("#nr-quality")) $("#nr-quality").value = i.default_quality; }).catch(() => {});
+  let presetList = [];
+  const fillPresets = list => {
+    presetList = list;
+    $("#nr-preset").innerHTML = `<option value="">Saved presets…</option>` + list.map(p => `<option value="${esc(p.name)}">${esc(p.name)}</option>`).join("");
+    $("#nr-presetdel").hidden = true;
+  };
+  fetch("/api/presets").then(r => r.json()).then(j => fillPresets(j.presets || [])).catch(() => {});
+  $("#nr-preset").onchange = e => {
+    const p = presetList.find(x => x.name === e.target.value);
+    $("#nr-presetdel").hidden = !p;
+    if (p) { $("#nr-context").value = p.app_context || ""; $("#nr-firstopen").value = p.first_open || ""; $("#nr-presetname").value = p.name; }
+  };
+  $("#nr-presetsave").onclick = async () => {
+    try { fillPresets((await post("/api/presets/save", {name: $("#nr-presetname").value, app_context: $("#nr-context").value, first_open: $("#nr-firstopen").value})).presets); $("#nr-preseterr").textContent = ""; $("#nr-preset").value = $("#nr-presetname").value.trim(); $("#nr-presetdel").hidden = false; }
+    catch (e) { $("#nr-preseterr").textContent = e.message; }
+  };
+  $("#nr-presetdel").onclick = async () => { fillPresets((await post("/api/presets/delete", {name: $("#nr-preset").value})).presets); };
   $("#nr-rev").onchange = e => { const b = $("#nr-revbox"); b.hidden = !e.target.checked; b.style.display = e.target.checked ? "flex" : "none"; };
   $("#nr-specfile").onchange = async e => { if (e.target.files[0]) $("#nr-spec").value = await readFile(e.target.files[0], false); };
   $("#nr-go").onclick = async () => {
@@ -963,10 +988,26 @@ let isRemote = false, ppTimer = null;
 fetch("/api/info").then(r => r.json()).then(i => { if (i.remote) { isRemote = true; document.body.classList.add("remote"); } }).catch(() => {});
 const clockTime = t => new Date(t * 1000).toLocaleTimeString([], {hour: "2-digit", minute: "2-digit"});
 async function ppStatus() {
-  const [aw, rm] = await Promise.all([fetch("/api/awake").then(r => r.json()).catch(() => ({})),
-    isRemote ? Promise.resolve({on: false}) : fetch("/api/remote").then(r => r.json()).catch(() => ({on: false}))]);
+  const [aw, rm, pu, info] = await Promise.all([fetch("/api/awake").then(r => r.json()).catch(() => ({})),
+    isRemote ? Promise.resolve({on: false}) : fetch("/api/remote").then(r => r.json()).catch(() => ({on: false})),
+    isRemote ? Promise.resolve({on: false}) : fetch("/api/push").then(r => r.json()).catch(() => ({on: false})),
+    fetch("/api/info").then(r => r.json()).catch(() => ({}))]);
   $("#pp-dot").hidden = !(aw.on || rm.on);
-  return {aw, rm};
+  const sp = info.spend, chip = $("#spend-chip");
+  if (sp) {
+    const capped = sp.daily_cap > 0, over = capped && sp.today >= sp.daily_cap;
+    chip.hidden = false; chip.classList.toggle("over", over);
+    chip.textContent = "Today $" + sp.today.toFixed(2) + (capped ? " / $" + sp.daily_cap : "");
+    chip.title = "Spent today across all runs" + (capped ? " (daily cap $" + sp.daily_cap + ")" : "") + ". This month: $" + sp.month.toFixed(2) + (sp.monthly_cap > 0 ? " of $" + sp.monthly_cap : "") + ". Set caps: sf.py configure --daily-cap 25 --monthly-cap 200";
+  }
+  return {aw, rm, pu};
+}
+function ppPushHtml(pu) {
+  if (!pu.on) return `<div class="pp-sec"><h3>Phone notifications</h3><p>Get a buzz on your phone when a run needs you, even when you are away from home. It uses the free ntfy app. Only a generic line is sent, like "needs you: Approve the spec", never your idea or code.</p>
+    <div class="pp-row"><button class="btn go" id="pu-on">Turn on phone notifications</button></div><div class="err" id="pu-err"></div></div>`;
+  return `<div class="pp-sec"><h3 class="pp-on">Phone notifications are on</h3><p>Install the free <b>ntfy</b> app (iPhone or Android), choose <b>Subscribe to topic</b> and type:</p>
+    <div class="pp-topic">${esc(pu.topic)}</div><p class="micro">Treat this topic like a password: anyone who knows it can read those short lines. Server: ${esc(pu.server)}</p>
+    <div class="pp-row"><button class="btn" id="pu-test">Send a test</button><button class="btn warn" id="pu-off">Turn off</button></div><div class="err" id="pu-err"></div></div>`;
 }
 function ppAwakeHtml(aw) {
   if (!aw.supported) return `<div class="pp-sec"><h3>Keep my computer awake</h3><p>This computer has no way for the factory to hold it awake (macOS, Windows and Linux with systemd are supported).</p></div>`;
@@ -987,15 +1028,19 @@ function ppPhoneHtml(rm) {
     <div><p class="micro">Or type this address, then the PIN</p>${where}<div class="pp-pin" aria-label="PIN">${esc(rm.pin)}</div>
     <p>${rm.signed_in ? rm.signed_in + " phone" + (rm.signed_in > 1 ? "s" : "") + " signed in" : "No phone signed in yet"}</p></div></div>
     ${rm.rotated_by_attack ? `<p class="pp-warn">Someone entered many wrong PINs, so the PIN was replaced. Scan again.</p>` : ""}
+    <p class="micro">${rm.away ? `Away from home, on Tailscale: <span class="mono">${esc(rm.away)}</span> (this computer must stay on, and the phone needs Tailscale too).` : `Away from home? Install Tailscale (free) on this computer and your phone, then turn the phone view off and on again: a private address appears here. Nothing is opened to the public internet.`}</p>
     <div class="pp-row"><button class="btn" id="ph-new">New PIN (signs phones out)</button><button class="btn warn" id="ph-off">Turn off</button></div>
     <p class="micro" style="margin-top:12px">This uses plain http on your own network. Use home or office Wi-Fi you trust, not a cafe or hotel. If the phone cannot connect, allow Python through the Windows firewall for private networks when it asks. It turns off by itself when the dashboard stops.</p></div>`;
 }
 async function renderPhone() {
   if (!$("#pp")) return;
-  const {aw, rm} = await ppStatus();
+  const {aw, rm, pu} = await ppStatus();
   if (!$("#pp")) return;
-  $("#pp").innerHTML = ppAwakeHtml(aw) + (isRemote ? "" : ppPhoneHtml(rm));
+  $("#pp").innerHTML = ppAwakeHtml(aw) + (isRemote ? "" : ppPhoneHtml(rm) + ppPushHtml(pu));
   const act = (id, fn, errId) => { const b = $(id); if (b) b.onclick = async () => { b.disabled = true; try { await fn(); await renderPhone(); } catch (e) { const el = $(errId); if (el) el.textContent = e.message; b.disabled = false; } }; };
+  act("#pu-on", () => post("/api/push", {on: true}), "#pu-err");
+  act("#pu-off", () => post("/api/push", {on: false}), "#pu-err");
+  act("#pu-test", async () => { const r = await post("/api/push", {test: true}); if (!r.sent) throw new Error("Could not reach the notification server (offline, or a wrong address)."); }, "#pu-err");
   act("#aw-on", () => { const v = $("#aw-mode").value; return post("/api/awake", v === "runs" ? {on: true, mode: "runs"} : {on: true, mode: "hours", hours: Number(v)}); }, "#aw-err");
   act("#aw-off", () => post("/api/awake", {on: false}), "#aw-err");
   act("#ph-on", async () => { const wantAwake = $("#ph-awake").checked; await post("/api/remote", {on: true}); if (wantAwake) await post("/api/awake", {on: true, mode: "runs"}).catch(() => {}); }, "#ph-err");

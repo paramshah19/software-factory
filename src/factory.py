@@ -41,7 +41,10 @@ HERE = Path(__file__).resolve().parent
 from common import (AGENTS_DIR, NO_WINDOW, WORKSPACE, Role, StageFailed, failing_acs, git, holdout_withs, load_role,  # noqa: E402
                     parse_role, posix, ready_cards, sh, slug, spec_ac_text, spec_acs, validate_cards)
 import checks  # noqa: E402
+import cleanup  # noqa: E402
 import common  # noqa: E402
+import push  # noqa: E402
+import spend  # noqa: E402
 import engines  # noqa: E402
 import kinds  # noqa: E402
 from pipeline import PipelineMixin  # noqa: E402
@@ -385,9 +388,14 @@ def parse_limit_reset(text: str, now: Optional[float] = None) -> Optional[float]
     return t.timestamp()
 
 
-def notify(title: str, msg: str) -> None:
-    """Best-effort desktop balloon so a long run can tell you it needs you. Never raises."""
-    if os.environ.get("FACTORY_NOTIFY") == "0" or engines.load_config().get("notify") is False:
+def notify(title: str, msg: str, remote: bool = False) -> None:
+    """Best-effort desktop balloon so a long run can tell you it needs you. Never raises.
+    remote=True also sends a short push to your phone when you switched that on (push.py); only for generic lines."""
+    if os.environ.get("FACTORY_NOTIFY") == "0":
+        return
+    if remote:
+        threading.Thread(target=push.send, args=(title, msg), kwargs={"urgent": True}, daemon=True).start()
+    if engines.load_config().get("notify") is False:
         return
     if os.name != "nt":
         clean = lambda x: str(x).replace('"', "'")[:120]
@@ -588,7 +596,7 @@ class Run(PipelineMixin):
             self.state["waiting"] = {"until": until, "reason": "Claude usage limit reached", "card": card_id}
         self.event("limit", card_id, f"Claude usage limit reached; waiting until about {when}, then continuing on its own")
         if self.notifies:
-            notify("Software Factory paused", f"Usage limit reached. Continues at about {when}.")
+            notify("Software Factory paused", f"Usage limit reached. Continues at about {when}.", remote=True)
         while time.time() < until:
             self.sleep(min(30, max(0.0, until - time.time())))
         with self.lock:
@@ -754,7 +762,7 @@ class Run(PipelineMixin):
             self.stage(stage_key, "owner")
         self.event("gate", card_id, title)
         if self.notifies:
-            notify("Software Factory needs you", title)
+            notify("Software Factory needs you", title, remote=True)
         dec = self.rd / "decision.json"
         while True:
             if dec.exists():
@@ -1041,6 +1049,9 @@ def create_run(inputs, runs_dir: Path = RUNS_DIR) -> Path:
     err = checks.check_inputs(inputs)
     if err:
         raise ValueError(err)
+    capped = spend.check_new_run(runs_dir)
+    if capped:
+        raise ValueError(capped)
     rev_in = inputs.get("reverse") if isinstance(inputs.get("reverse"), dict) else None
     label = inputs.get("idea") or (rev_in or {}).get("target") or ("spec" if inputs.get("spec") else "ideas")
     run_id = _dt.datetime.now().strftime("%Y%m%d-%H%M%S") + "-" + slug(label)
@@ -1271,6 +1282,8 @@ def main(argv=None) -> int:
                    help="lean (cheapest, for experiments), balanced or max (strongest models everywhere); default: your setup choice")
     n.add_argument("--budget", type=float, help="spending cap in dollars (0 = no cap); default 10 single / 45 full pipeline")
     sub.add_parser("stats", help="cost, time and outcome of every past run")
+    cl = sub.add_parser("clean", help="free disk space: remove what finished runs can rebuild (shows first, changes nothing without --apply)")
+    cl.add_argument("--apply", action="store_true", help="really remove it")
     dp = sub.add_parser("deploy", help="publish or package a finished run: netlify, vercel, github-pages or desktop")
     dp.add_argument("run")
     dp.add_argument("--target", choices=["netlify", "vercel", "github-pages", "desktop", "docker", "render", "installer", "package", "expo", "godot-export"])
@@ -1295,6 +1308,19 @@ def main(argv=None) -> int:
         return cmd_check()
     if args.cmd == "status":
         cmd_status(args.run)
+        return 0
+    if args.cmd == "clean":
+        rows = cleanup.plan(RUNS_DIR)
+        for r in sorted(rows, key=lambda r: -r["bytes"])[:25]:
+            print(f"  {cleanup.human(r['bytes']):>9}  {r['run'][:46]:46} {r['what']}")
+        total = sum(r["bytes"] for r in rows)
+        if not rows:
+            print("nothing to clean: only finished, not-running apps are touched")
+        elif args.apply:
+            res = cleanup.apply(rows, RUNS_DIR)
+            print(f"removed {res['removed']} folders, freed {cleanup.human(res['freed_bytes'])}. Finished apps rebuild their packages when you open them again.")
+        else:
+            print(f"{len(rows)} folders, {cleanup.human(total)} could be freed. Nothing was changed: run with --apply to remove them.")
         return 0
     if args.cmd == "stats":
         cmd_stats()
