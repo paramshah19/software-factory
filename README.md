@@ -59,6 +59,22 @@ Once it is cloned you don't need a terminal. The first start installs what it ne
 The dashboard opens as **its own app window** (no tabs or address bar). To use your normal browser instead: `uv run --no-project python scripts/sf.py configure --open-as browser`, or start with `--browser`. Add `--phone` to switch on the phone view and `--awake` to keep the computer awake (below).
 Want an icon on your desktop? Run `uv run --no-project python scripts/sf.py shortcut` once.
 
+### Open it like an app, by typing its name
+You clone the factory from GitHub once; after that you can make it a normal app on your computer. Run this once (or press **Add to Start menu** in the dashboard's **Phone & power** panel):
+
+```bash
+uv run --no-project python scripts/sf.py install-app
+```
+
+| Your computer | What it adds | To open it |
+|---|---|---|
+| Windows | `Software Factory` in the Start menu, with its icon | press the Windows key, type `Software Factory`, press Enter |
+| macOS | `Software Factory.app` in `~/Applications` | press Cmd+Space, type `Software Factory`, press Enter |
+| Linux | an entry in your app menu | search the app menu for Software Factory |
+
+Opening it starts the factory by itself if it isn't running, then shows the dashboard as an app window. The entry points at the folder you cloned, so don't move that folder (if you do, run the command again). `--desktop` adds a Desktop icon too. To remove it, delete that Start menu / Applications entry; the factory itself is untouched.
+Your browser can also install the dashboard as an app (Edge or Chrome: menu → *Apps* → *Install this site as an app*). That version only opens while the factory is running, so the entry above is the better way to start it.
+
 ## Where things are
 ```
 software-factory/
@@ -213,7 +229,7 @@ uv run src/factory.py run <run>              # resume after a failure or restart
 A live view of a run: the pipeline rail for the chosen path, each active agent's live feed with its model and effort, the **Factory console** (the output of the hidden background process), every card, the cost so far, documents (the report shows its screenshots), and an event stream. The gates appear in the **Needs you** panel: the idea list with **Choose this** and **Random pick**, the decider with a countdown and a **Switch** button, the spec with the mock screenshots, the final review with **Open the app**, and troubleshooter questions. **New run** has all the inputs; **Always-use docs** edits your standing documents; **Skills** is the skills library (drop skill files or folders; each run's skill agent decides which to use). A banner with **Resume run** appears if the driver stopped. The dashboard itself only listens on this computer (127.0.0.1) and refuses requests that arrive under another host name.
 
 ### Phone view and keep awake (the **Phone & power** button)
-- **Phone view:** watch a run and answer its "Needs you" questions from your phone, on the same Wi-Fi. Press **Turn on phone view**, scan the QR code with the phone's camera, done. Or `uv run --no-project python scripts/sf.py phone on`.
+- **Phone view:** watch a run and answer its "Needs you" questions from your phone, on the same Wi-Fi. Press the **Phone QR** button in the header (it turns the phone view on and shows the QR code, address and PIN in one click), scan the QR code with the phone's camera, done. Or `uv run --no-project python scripts/sf.py phone on`.
   - It is **off every time the dashboard starts**, and you switch it on on purpose. Only then does a second server listen on your local network.
   - It needs a fresh 6-digit **PIN** each time (the QR code carries it). A wrong PIN locks that device for a minute, and many wrong PINs anywhere replace the PIN.
   - The phone can **watch and answer** (approve, reject, choose, resume) and keep the computer awake. It **cannot** start runs, store keys, deploy, open apps or edit your documents and skills: those stay on the computer.

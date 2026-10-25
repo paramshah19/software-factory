@@ -39,6 +39,7 @@ import presets
 import push
 import qr
 import remote
+import shortcuts
 import spend
 
 HERE = Path(__file__).resolve().parent   # src/
@@ -48,6 +49,8 @@ STALE_AFTER = 20  # seconds without a driver heartbeat = driver is not running
 CARD_STATE = {"pending": "waiting", "queued": "queued", "active": "active", "owner": "owner", "blocked": "blocked", "done": "done"}
 FILE_ROOTS = ("factory/", "inputs/photos/", "reference/shots/")  # the only places the page may read images from
 IMAGE_EXT = {".png", ".jpg", ".jpeg", ".webp", ".gif"}
+STATIC_FILES = {"/favicon.ico": ("icon.ico", "image/x-icon"), "/icon.ico": ("icon.ico", "image/x-icon"), "/icon.png": ("icon.png", "image/png"),
+                "/manifest.webmanifest": ("manifest.webmanifest", "application/manifest+json")}
 
 
 # --------------------------------------------------------------------------- data
@@ -339,6 +342,13 @@ def act(path: str, body: dict) -> tuple[int, dict]:
             return 200, AWAKE.start(str(body.get("mode") or "runs"), float(body.get("hours") or 2)) if body.get("on") else AWAKE.stop()
         except (RuntimeError, ValueError) as e:
             return 400, {"error": str(e)}
+    if path == "/api/install-app":   # open by typing the name (this computer only)
+        where = "desktop" if body.get("where") == "desktop" else "menu"
+        try:
+            made = shortcuts.create(where, ROOT)
+        except (FileNotFoundError, RuntimeError, OSError) as e:
+            return 400, {"error": str(e)[:300]}
+        return 200, {"ok": True, "path": made.as_posix(), "where": where, "next": shortcuts.how_to_open() if where == "menu" else "Double-click the icon on your Desktop."}
     if path == "/api/presets/save":
         try:
             return 200, {"presets": presets.save(common.WORKSPACE, body.get("name"), body.get("app_context"), body.get("first_open"))}
@@ -565,12 +575,13 @@ class Handler(BaseHTTPRequestHandler):
             return self._json({"error": "forbidden"}, 403) if self.remote else self._json(PHONE.status())
         if url.path in ("/", "/index.html"):
             return self._send(200, (STATIC / "index.html").read_bytes(), "text/html; charset=utf-8")
-        if url.path == "/favicon.ico":
-            return self._send(204, b"", "image/x-icon")
+        if url.path in STATIC_FILES:   # the app icon, and the manifest that lets a browser install the dashboard as an app
+            f, ctype = STATIC_FILES[url.path]
+            return self._send(200, (STATIC / f).read_bytes(), ctype, {"Cache-Control": "max-age=3600"}) if (STATIC / f).exists() else self._send(204, b"", ctype)
         if url.path == "/api/info":  # lets scripts/sf.py confirm this is the factory it expects
             return self._json({"app": "software-factory", "factory_dir": factory.posix(ROOT), "engine": factory.engines.describe(),
                                "default_quality": factory.default_quality(), "remote": self.remote,
-                               "spend": spend.summary(factory.RUNS_DIR)})
+                               "spend": spend.summary(factory.RUNS_DIR), "os": shortcuts.os_name()})
         if url.path == "/api/presets":
             return self._json({"presets": presets.load(common.WORKSPACE)})
         if url.path == "/api/push":

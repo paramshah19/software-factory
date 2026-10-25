@@ -4,6 +4,10 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>SF · Software Factory</title>
+<link rel="icon" href="/icon.png" type="image/png">
+<link rel="apple-touch-icon" href="/icon.png">
+<link rel="manifest" href="/manifest.webmanifest">
+<meta name="theme-color" content="#0e1014">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -53,6 +57,8 @@ header .title{grid-area:title}
 .brand b{display:block;font-weight:600;font-size:15px;letter-spacing:.01em}
 .brand b,.brand .micro{white-space:nowrap}
 #spend-chip.over{color:var(--bad)}.pp-sec .field{width:100%;margin-top:8px}.pp-topic{font:600 15px var(--mono);word-break:break-all;margin:6px 0;color:var(--ink)}
+.qr-big{width:min(300px,100%);aspect-ratio:1;border-radius:14px;overflow:hidden;background:#fff;margin:6px auto 12px}.qr-big svg{width:100%;height:100%;display:block}
+.qr-pin{font:600 38px var(--mono);letter-spacing:.3em;text-align:center;margin:4px 0 2px}.qr-sub{text-align:center;color:var(--ink-2);margin:4px 0}
 .preset-row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}.preset-row select{flex:1 1 180px;min-width:0}
 .title{min-width:0}
 .title h1{margin:4px 0 0;font-size:22px;font-weight:500;letter-spacing:-.01em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -311,7 +317,7 @@ td.num{white-space:nowrap}
 @media (max-width:640px){.wrap{padding:16px}.rail{grid-template-columns:repeat(2,minmax(0,1fr))!important}}
 @media (max-width:640px){#cards-table th:nth-child(n+4),#cards-table td:nth-child(n+4){display:none}#cards-table th,#cards-table td{padding-left:12px;padding-right:12px}}
 /* phone view: what only the computer may do is hidden (the server refuses it as well) */
-body.remote #skills-btn, body.remote #always-btn, body.remote #new-run, body.remote #deploy, body.remote #myapp, body.remote #g-open, body.remote #clock{display:none!important}
+body.remote #qr-btn, body.remote #skills-btn, body.remote #always-btn, body.remote #new-run, body.remote #deploy, body.remote #myapp, body.remote #g-open, body.remote #clock{display:none!important}
 @media (max-width:820px){header{grid-template-columns:minmax(0,1fr);grid-template-areas:"brand" "hud" "title"}.hud{justify-content:flex-start}.hud select{max-width:100%;min-width:0;flex:1 1 180px}}
 #phone-btn .dot{display:inline-block;margin-left:8px;background:var(--signal);box-shadow:0 0 8px var(--signal)}
 .pp-sec{border:1px solid var(--line);border-radius:var(--r);padding:16px;margin:14px 0;background:var(--panel)}
@@ -319,7 +325,7 @@ body.remote #skills-btn, body.remote #always-btn, body.remote #new-run, body.rem
 .pp-row{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-top:10px}
 .pp-pin{font:600 34px var(--mono);letter-spacing:.3em;margin:6px 0}
 .pp-qr{width:208px;height:208px;border-radius:12px;overflow:hidden;background:#fff;flex:none}.pp-qr svg{width:100%;height:100%;display:block}
-.pp-on{color:var(--signal)}.pp-warn{color:var(--owner)}
+.pp-ok{color:var(--signal);margin-top:8px}.pp-on{color:var(--signal)}.pp-warn{color:var(--owner)}
 @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
 </style>
 </head>
@@ -337,6 +343,7 @@ body.remote #skills-btn, body.remote #always-btn, body.remote #new-run, body.rem
     <div class="hud">
       <span class="chip" title="Live stream from the run folder"><span class="dot" id="live-dot"></span><span id="live-txt">offline</span></span>
       <span class="chip" title="The driver is the process that runs the agents for this run"><span class="dot" id="gw-dot"></span>driver</span>
+      <button class="btn" id="qr-btn" title="Show a QR code that opens this dashboard on your phone (same Wi-Fi)">Phone QR</button>
       <button class="btn" id="phone-btn" title="Phone view and keep-awake">Phone &amp; power<span class="dot" id="pp-dot" hidden></span></button>
       <button class="btn" id="skills-btn">Skills</button>
       <button class="btn" id="always-btn">Always-use docs</button>
@@ -1000,7 +1007,13 @@ async function ppStatus() {
     chip.textContent = "Today $" + sp.today.toFixed(2) + (capped ? " / $" + sp.daily_cap : "");
     chip.title = "Spent today across all runs" + (capped ? " (daily cap $" + sp.daily_cap + ")" : "") + ". This month: $" + sp.month.toFixed(2) + (sp.monthly_cap > 0 ? " of $" + sp.monthly_cap : "") + ". Set caps: sf.py configure --daily-cap 25 --monthly-cap 200";
   }
-  return {aw, rm, pu};
+  return {aw, rm, pu, os: info.os};
+}
+function ppAppHtml(os) {
+  const where = {windows: "Start menu", mac: "Applications folder (Spotlight)", linux: "app menu"}[os] || "app menu";
+  const how = {windows: 'press the Windows key, type "Software Factory", press Enter', mac: 'press Cmd+Space, type "Software Factory", press Enter', linux: "search your app menu for Software Factory"}[os] || "search for Software Factory";
+  return `<div class="pp-sec"><h3>Open it by name</h3><p>Add Software Factory to your ${where} so you can ${how}. It starts the factory by itself if it isn't running, and opens this dashboard as an app window. It points at the folder you cloned from GitHub, so don't move that folder (if you do, press this again).</p>
+    <div class="pp-row"><button class="btn go" id="app-menu">Add to ${where}</button><button class="btn" id="app-desk">Add a Desktop icon</button></div><div class="pp-ok" id="app-ok"></div><div class="err" id="app-err"></div></div>`;
 }
 function ppPushHtml(pu) {
   if (!pu.on) return `<div class="pp-sec"><h3>Phone notifications</h3><p>Get a buzz on your phone when a run needs you, even when you are away from home. It uses the free ntfy app. Only a generic line is sent, like "needs you: Approve the spec", never your idea or code.</p>
@@ -1034,9 +1047,14 @@ function ppPhoneHtml(rm) {
 }
 async function renderPhone() {
   if (!$("#pp")) return;
-  const {aw, rm, pu} = await ppStatus();
+  const {aw, rm, pu, os} = await ppStatus();
   if (!$("#pp")) return;
-  $("#pp").innerHTML = ppAwakeHtml(aw) + (isRemote ? "" : ppPhoneHtml(rm) + ppPushHtml(pu));
+  const appMsg = $("#app-ok") ? $("#app-ok").textContent : "";   // keep the "done" message across the 4-second refresh
+  $("#pp").innerHTML = ppAwakeHtml(aw) + (isRemote ? "" : ppPhoneHtml(rm) + ppPushHtml(pu) + ppAppHtml(os));
+  if ($("#app-ok")) $("#app-ok").textContent = appMsg;
+  const install = (id, where) => { const b = $(id); if (b) b.onclick = async () => { b.disabled = true; try { const r = await post("/api/install-app", {where}); $("#app-ok").textContent = "Done. " + r.next; $("#app-err").textContent = ""; } catch (e) { $("#app-err").textContent = e.message; } b.disabled = false; }; };
+  install("#app-menu", "menu");
+  install("#app-desk", "desktop");
   const act = (id, fn, errId) => { const b = $(id); if (b) b.onclick = async () => { b.disabled = true; try { await fn(); await renderPhone(); } catch (e) { const el = $(errId); if (el) el.textContent = e.message; b.disabled = false; } }; };
   act("#pu-on", () => post("/api/push", {on: true}), "#pu-err");
   act("#pu-off", () => post("/api/push", {on: false}), "#pu-err");
@@ -1047,6 +1065,34 @@ async function renderPhone() {
   act("#ph-new", () => post("/api/remote", {on: true, rotate: true}), "#ph-err");
   act("#ph-off", () => post("/api/remote", {on: false}), "#ph-err");
 }
+let qrTimer = null, qrSig = "";
+async function openQR() {
+  openDrawer("this computer", "Phone QR", `<div id="qrbox"><p class="hint">Getting your QR code…</p></div>`);
+  qrSig = "";
+  const draw = async turnOn => {
+    const box = $("#qrbox");
+    if (!box) { clearInterval(qrTimer); return; }
+    let rm = await fetch("/api/remote").then(r => r.json()).catch(() => ({on: false}));
+    if (!rm.on && turnOn) { try { rm = await post("/api/remote", {on: true}); } catch (e) { box.innerHTML = `<p class="err">${esc(e.message)}</p>`; return; } }
+    const sig = JSON.stringify([rm.on, rm.pin, rm.signed_in, rm.urls]);
+    if (sig === qrSig) return;
+    qrSig = sig;
+    if (!rm.on) { box.innerHTML = `<p class="hint">Phone view is off, so there is no QR code.</p><div class="pp-row"><button class="btn go" id="qr-on">Turn on and show the QR code</button></div>`; $("#qr-on").onclick = () => draw(true); return; }
+    const where = rm.urls.length ? rm.urls.map(u => `<div>${esc(u)}</div>`).join("") : `<div class="pp-warn">${esc(rm.note)}</div>`;
+    box.innerHTML = `<p class="qr-sub">Point your phone's camera at this. The phone must be on the same Wi-Fi as this computer.</p>
+      <div class="qr-big" role="img" aria-label="QR code that opens the dashboard on your phone">${rm.qr || ""}</div>
+      <p class="qr-sub micro">Or open this address and type the PIN</p><div class="qr-sub mono">${where}</div><div class="qr-pin" aria-label="PIN">${esc(rm.pin)}</div>
+      <p class="qr-sub">${rm.signed_in ? rm.signed_in + " phone" + (rm.signed_in > 1 ? "s" : "") + " signed in" : "Waiting for your phone…"}</p>
+      <div class="pp-row" style="justify-content:center"><button class="btn" id="qr-new">New PIN</button><button class="btn warn" id="qr-off">Turn off phone view</button><button class="btn" id="qr-more">Phone &amp; power</button></div><div class="err" id="qr-err"></div>`;
+    const go = (id, fn) => { $(id).onclick = async () => { try { await fn(); qrSig = ""; await draw(false); } catch (e) { $("#qr-err").textContent = e.message; } }; };
+    go("#qr-new", () => post("/api/remote", {on: true, rotate: true}));
+    go("#qr-off", () => post("/api/remote", {on: false}));
+    $("#qr-more").onclick = () => { clearInterval(qrTimer); openPhone(); };
+  };
+  await draw(true);
+  clearInterval(qrTimer);
+  qrTimer = setInterval(() => draw(false), 3000);
+}
 function openPhone() {
   openDrawer(isRemote ? "from your phone" : "this computer", "Phone & power", `<div id="pp"></div>`);
   renderPhone();
@@ -1054,6 +1100,7 @@ function openPhone() {
   ppTimer = setInterval(() => { if (!$("#pp")) clearInterval(ppTimer); else if (document.body.classList.contains("open") && document.activeElement?.tagName !== "SELECT") renderPhone(); }, 4000);
 }
 $("#phone-btn").onclick = openPhone;
+$("#qr-btn").onclick = openQR;
 ppStatus();
 setInterval(ppStatus, 15000);
 $("#skills-btn").onclick = openSkills;

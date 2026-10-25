@@ -1,0 +1,12 @@
+{
+  "name": "Software Factory",
+  "short_name": "Software Factory",
+  "description": "An idea in, a tested app out. The live dashboard for your factory.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0e1014",
+  "theme_color": "#0e1014",
+  "icons": [
+    {"src": "/icon.png", "sizes": "512x512", "type": "image/png", "purpose": "any"}
+  ]
+}

@@ -33,7 +33,7 @@ COOKIE = "sf_remote"
 COOKIE_AGE = 12 * 3600    # a phone stays signed in for 12 hours
 
 # What a phone may do. Everything not listed is refused (and the page hides those buttons).
-ALLOWED_GET = {"/", "/index.html", "/api/info", "/api/state", "/api/stream", "/api/doc", "/api/file", "/api/log", "/api/awake", "/favicon.ico"}
+ALLOWED_GET = {"/", "/index.html", "/icon.png", "/icon.ico", "/manifest.webmanifest", "/api/info", "/api/state", "/api/stream", "/api/doc", "/api/file", "/api/log", "/api/awake", "/favicon.ico"}
 ALLOWED_POST = {"/api/approve", "/api/reject", "/api/decide", "/api/resume", "/api/awake", "/api/login"}
 
 

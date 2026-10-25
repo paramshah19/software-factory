@@ -176,12 +176,13 @@ def test_open_window_uses_an_app_window_when_a_chromium_browser_exists(sf, monke
     assert sf.open_window("http://z/") == "browser"                                         # no Chromium browser: fall back
 
 
-def test_shortcut_is_created_in_the_chosen_folder(sf, tmp_path):
+def test_shortcut_is_created_in_the_chosen_folder(sf, tmp_path, monkeypatch):
+    monkeypatch.setattr(sf._shortcuts(), "menu_dir", lambda custom=None: tmp_path / "apps")   # never the real Applications folder
     desk = tmp_path / "desk"
     desk.mkdir()
     assert sf.main(["shortcut", "--dir", str(desk)]) == 0
     made = sorted(p.name for p in desk.iterdir())
-    assert made == (["Software Factory.lnk"] if sf.WIN else ["Software Factory.command"] if sys.platform == "darwin" else ["Software Factory.desktop"])
+    assert made == (["Software Factory.lnk"] if sf.WIN else ["Software Factory.app"] if sys.platform == "darwin" else ["Software Factory.desktop"])
     assert sf.main(["shortcut", "--dir", str(tmp_path / "missing")]) == 1
 
 

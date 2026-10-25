@@ -251,3 +251,83 @@ def test_sf_caps_push_and_clean(sf, monkeypatch, capsys):
     monkeypatch.setattr(sf, "factory_py", lambda args, timeout=0, capture=True: calls.append(args) or (0, "3 folders, 1.0 MB could be freed."))
     assert sf.main(["clean"]) == 0 and sf.main(["clean", "--apply"]) == 0
     assert calls == [["clean"], ["clean", "--apply"]]
+
+
+# ------------------------------------------------------------------ open by name (Start menu / Applications / app menu)
+
+
+import shortcuts  # noqa: E402
+
+
+def test_shortcut_files_for_each_system(tmp_path, monkeypatch):
+    root = tmp_path / "repo"
+    (root / "dashboard").mkdir(parents=True)
+    (root / "dashboard" / "icon.png").write_bytes(b"png")
+    (root / "Start Software Factory.command").write_text("#!/bin/bash\n", encoding="utf-8")
+    (root / "Start Software Factory.cmd").write_text("@echo off\n", encoding="utf-8")
+    menu, desk = tmp_path / "menu", tmp_path / "desk"
+    menu.mkdir()
+    desk.mkdir()
+    monkeypatch.setattr(shortcuts, "WIN", False)
+    monkeypatch.setattr(shortcuts, "MAC", False)
+    made = shortcuts.create("menu", root, str(menu))                                  # Linux: a .desktop entry
+    text = made.read_text(encoding="utf-8")
+    assert made.name == "software-factory.desktop" and "Name=Software Factory" in text and "Start Software Factory.command" in text
+    assert f"Icon={(root / 'dashboard' / 'icon.png').resolve()}" in text and "Terminal=false" in text
+    assert shortcuts.create("desktop", root, str(desk)).name == "Software Factory.desktop"
+    monkeypatch.setattr(shortcuts, "MAC", True)                                       # macOS: a tiny .app bundle
+    app = shortcuts.create("menu", root, str(menu))
+    run = app / "Contents" / "MacOS" / "run"
+    assert app.name == "Software Factory.app" and (app / "Contents" / "Info.plist").exists()
+    assert "Start Software Factory.command" in run.read_text(encoding="utf-8") and ".local/bin" in run.read_text(encoding="utf-8")
+    if os.name != "nt":   # Windows has no executable flag and restricts symlinks; this part is for macOS and Linux
+        assert run.stat().st_mode & 0o100
+        assert shortcuts.create("desktop", root, str(desk)).is_symlink()
+    with pytest.raises(FileNotFoundError):
+        shortcuts.create("menu", tmp_path / "nowhere", str(menu))
+    assert shortcuts.how_to_open()
+
+
+@pytest.mark.skipif(os.name != "nt", reason="the Start menu shortcut is a Windows .lnk")
+def test_windows_start_menu_shortcut_has_the_icon_and_the_launcher(tmp_path):
+    menu = tmp_path / "Programs"
+    menu.mkdir()
+    made = shortcuts.create("menu", common.ROOT, str(menu))
+    assert made.name == "Software Factory.lnk" and made.exists()
+    probe = subprocess.run(["powershell", "-NoProfile", "-Command",
+                            f"$s=(New-Object -ComObject WScript.Shell).CreateShortcut('{made}'); $s.TargetPath; $s.IconLocation; $s.WorkingDirectory"],
+                           capture_output=True, text=True, timeout=60).stdout.split("\n")
+    assert probe[0].strip().endswith("Start Software Factory.cmd") and probe[1].strip().startswith(str(common.ROOT / "dashboard" / "icon.ico"))
+
+
+def test_install_app_endpoint_is_local_only_and_calls_the_shortcut_maker(servers, monkeypatch, tmp_path):
+    made = []
+    monkeypatch.setattr(dashboard.shortcuts, "create", lambda where, root, folder=None: made.append(where) or (tmp_path / "Software Factory.lnk"))
+    out = json.loads(call(servers, "POST", "/api/install-app", {"where": "menu"})[1])
+    assert out["ok"] and made == ["menu"] and out["next"]
+    json.loads(call(servers, "POST", "/api/install-app", {"where": "desktop"})[1])
+    assert made == ["menu", "desktop"]
+    assert json.loads(call(servers, "GET", "/api/info")[1])["os"] in ("windows", "mac", "linux")
+    info, port = turn_on(servers)
+    cookie = call(port, "GET", "/?pin=" + info["pin"])[2]["Set-Cookie"].split(";")[0]
+    assert call(port, "POST", "/api/install-app", {"where": "menu"}, cookie=cookie)[0] == 403 and made == ["menu", "desktop"]
+    monkeypatch.setattr(dashboard.shortcuts, "create", lambda *a, **k: (_ for _ in ()).throw(FileNotFoundError("launcher not found")))
+    assert call(servers, "POST", "/api/install-app", {"where": "menu"})[0] == 400
+
+
+def test_icon_and_manifest_are_served_so_a_browser_can_install_the_dashboard(servers):
+    status, body, h = call(servers, "GET", "/icon.png")
+    assert status == 200 and body[:8] == b"\x89PNG\r\n\x1a\n" and h["Content-Type"] == "image/png"
+    status, body, _ = call(servers, "GET", "/favicon.ico")
+    assert status == 200 and body[:4] == b"\x00\x00\x01\x00"                       # a real .ico
+    manifest = json.loads(call(servers, "GET", "/manifest.webmanifest")[1])
+    assert manifest["name"] == "Software Factory" and manifest["display"] == "standalone" and manifest["icons"][0]["src"] == "/icon.png"
+    html = call(servers, "GET", "/")[1].decode("utf-8")
+    assert 'rel="manifest"' in html and 'href="/icon.png"' in html
+
+
+def test_sf_install_app_command(sf, tmp_path, capsys):
+    target = tmp_path / "apps"
+    target.mkdir()
+    assert sf.main(["install-app", "--dir", str(target)]) == 0
+    assert len(list(target.iterdir())) == 1 and "next" in capsys.readouterr().out

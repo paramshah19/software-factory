@@ -16,6 +16,7 @@ Setup (once):
 Every day:
     sf.py start                       the one-click way in: install on first start, start the dashboard, open it as an app window
     sf.py start --browser --phone     ...in your normal browser, with the phone view on (same Wi-Fi, PIN)
+    sf.py install-app                 make it an app: press the Windows key (Cmd+Space on a Mac), type "Software Factory", Enter
     sf.py shortcut                    put a Software Factory icon on your Desktop (double-click = sf.py start)
     sf.py phone on|off|status         the dashboard on your phone; sf.py awake on|off|status keeps the computer awake
     sf.py push on|off|test|status     a notification on your phone (free ntfy app) when a run needs you
@@ -663,48 +664,36 @@ def cmd_start(a) -> int:
     return 0
 
 
-def desktop_dir(custom: Optional[str] = None) -> Path:
-    if custom:
-        return Path(custom).expanduser()
-    if WIN:   # the real Desktop folder (it moves when OneDrive backs it up)
-        rc, text = run(["powershell", "-NoProfile", "-Command", "[Environment]::GetFolderPath('Desktop')"], Path.cwd(), 30)
-        lines = text.strip().splitlines()
-        if rc == 0 and lines and Path(lines[-1]).is_dir():
-            return Path(lines[-1])
-    return Path.home() / "Desktop"
+def _shortcuts():
+    """The factory's own shortcut maker (src/shortcuts.py), shared with the dashboard."""
+    sys.path.insert(0, str(factory_dir() / "src"))
+    import shortcuts  # noqa: E402
+    return shortcuts
+
+
+def _make_shortcut(where: str, folder: Optional[str], a) -> int:
+    sc = _shortcuts()
+    try:
+        made = sc.create(where, factory_dir(), folder)
+    except (FileNotFoundError, RuntimeError, OSError) as e:
+        print(e)
+        return 1
+    nxt = sc.how_to_open() if where == "menu" else "Double-click it to start the Software Factory."
+    out({"shortcut": made.as_posix(), "next": nxt}, a.json)
+    return 0
 
 
 def cmd_shortcut(a) -> int:
     """A Desktop icon that starts the factory with one double-click."""
-    target = factory_dir() / ("Start Software Factory.cmd" if WIN else "Start Software Factory.command")
-    desk = desktop_dir(a.dir)
-    if not target.exists():
-        print(f"launcher not found: {target}")
-        return 1
-    if not desk.is_dir():
-        print(f"no Desktop folder at {desk}: pass --dir FOLDER")
-        return 1
-    if WIN:
-        lnk = desk / "Software Factory.lnk"
-        q = lambda p: str(p).replace("'", "''")
-        script = (f"$s=(New-Object -ComObject WScript.Shell).CreateShortcut('{q(lnk)}');$s.TargetPath='{q(target)}';"
-                  f"$s.WorkingDirectory='{q(target.parent)}';$s.WindowStyle=7;$s.Description='Start the Software Factory';$s.Save()")
-        rc, text = run(["powershell", "-NoProfile", "-Command", script], Path.cwd(), 60)
-        made = lnk
-        if rc != 0 or not lnk.exists():
-            print("could not create the shortcut: " + text.strip()[-300:])
-            return 1
-    elif sys.platform == "darwin":
-        made = desk / "Software Factory.command"
-        made.unlink(missing_ok=True)
-        made.symlink_to(target)
-    else:
-        made = desk / "Software Factory.desktop"
-        made.write_text("[Desktop Entry]\nType=Application\nName=Software Factory\nComment=Start the Software Factory\n"
-                        f'Exec=bash "{target}"\nPath={target.parent}\nTerminal=false\n', encoding="utf-8")
-        made.chmod(0o755)
-    out({"shortcut": made.as_posix(), "next": "Double-click it to start the Software Factory."}, a.json)
-    return 0
+    return _make_shortcut("desktop", a.dir, a)
+
+
+def cmd_install_app(a) -> int:
+    """Make the factory an app you can open by typing its name (Start menu / Spotlight / app menu), after cloning it from GitHub."""
+    rc = _make_shortcut("menu", a.dir, a)
+    if rc == 0 and a.desktop:
+        rc = _make_shortcut("desktop", None, a)
+    return rc
 
 
 def cmd_phone(a) -> int:
@@ -888,6 +877,9 @@ def main(argv: Optional[list] = None) -> int:
     s0.add_argument("--no-open", action="store_true")
     sc = sub.add_parser("shortcut", parents=[common], help="put a Software Factory icon on your Desktop")
     sc.add_argument("--dir", help="put it in this folder instead of the Desktop")
+    ia = sub.add_parser("install-app", parents=[common], help="make Software Factory open by typing its name (Start menu, Spotlight, app menu)")
+    ia.add_argument("--desktop", action="store_true", help="also put an icon on your Desktop")
+    ia.add_argument("--dir", help="put the entry in this folder instead of the system's app folder")
     ph = sub.add_parser("phone", parents=[common], help="phone view: on, off or status")
     ph.add_argument("action", nargs="?", choices=["on", "off", "status"], default="status")
     pu = sub.add_parser("push", parents=[common], help="phone notifications through ntfy: on, off, test or status")
@@ -931,7 +923,7 @@ def main(argv: Optional[list] = None) -> int:
     return {"doctor": cmd_doctor, "configure": cmd_configure, "prepare": cmd_prepare, "agents": cmd_agents, "check": cmd_check,
             "install-skills": cmd_install_skills, "connections": cmd_connections, "dashboard": cmd_dashboard, "idea": cmd_idea,
             "status": cmd_status, "start": cmd_start, "shortcut": cmd_shortcut, "phone": cmd_phone, "awake": cmd_awake,
-            "push": cmd_push, "clean": cmd_clean}[a.cmd](a)
+            "push": cmd_push, "clean": cmd_clean, "install-app": cmd_install_app}[a.cmd](a)
 
 
 if __name__ == "__main__":

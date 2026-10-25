@@ -260,3 +260,20 @@ def test_header_keeps_room_for_the_run_title_at_every_width(site, page):
         wide = page.evaluate("width => [...document.querySelectorAll('body *')].filter(e => e.getBoundingClientRect().right > width + 1 && !e.closest('.drawer') && getComputedStyle(e).position !== 'fixed').slice(0, 6).map(e => e.tagName + '#' + e.id + '.' + e.className + ' ' + Math.round(e.getBoundingClientRect().right))", width)
         assert page.evaluate("document.documentElement.scrollWidth") <= width + 1, f"sideways scrolling at {width}px: {wide}"
         assert page.eval_on_selector("#phone-btn", "e => e.getBoundingClientRect().right") <= width, f"Phone & power button off screen at {width}px"
+
+
+def test_phone_qr_button_shows_the_qr_code_in_one_click_and_can_turn_it_off(site, page):
+    site.make(gate=None, status="running")
+    page.goto(site.url + "/")
+    page.wait_for_selector("#qr-btn")
+    try:
+        page.click("#qr-btn")
+        page.wait_for_selector(".qr-big svg", timeout=15000)
+        assert page.inner_text(".qr-pin").strip().isdigit() and len(page.inner_text(".qr-pin").strip()) == 6
+        assert page.eval_on_selector(".qr-big", "e => e.getBoundingClientRect().width") >= 200
+        assert dashboard.PHONE.on
+        page.click("#qr-off")
+        page.wait_for_selector("#qr-on", timeout=10000)
+        assert not dashboard.PHONE.on
+    finally:
+        dashboard.PHONE.stop()
