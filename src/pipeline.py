@@ -101,12 +101,21 @@ class PipelineMixin:
     def has_ui(self) -> bool:
         return bool((self.state.get("decision") or {}).get("has_ui", True))
 
+    # steps added to the pipeline after some runs were already made: resuming such a run must not add them (each one runs an agent first)
+    ADDED_LATER = ("skills", "skills_design", "skills_tech")
+    WORK_STAGES = ("maker", "spec", "mock", "design", "plan", "build")
+
     def ensure_rail(self):
         rail = build_rail(self.state["inputs"], self.state.get("mode"))
         with self.lock:
+            before = self.state["stages"]
+            already_worked = any((before.get(k) or {}).get("state") not in (None, "pending") for k in self.WORK_STAGES)
             self.state["rail"] = rail
             for e in rail:
-                self.state["stages"].setdefault(e["key"], {"state": "pending", "label": e["label"], "bot": e["bot"]})
+                fresh = e["key"] not in before
+                stage = self.state["stages"].setdefault(e["key"], {"state": "pending", "label": e["label"], "bot": e["bot"]})
+                if fresh and already_worked and e["key"] in self.ADDED_LATER:
+                    stage.update(state="done", detail="not part of this run (added later)")
             self.save()
 
     def fix_round(self, key: str, value: Optional[int] = None) -> int:

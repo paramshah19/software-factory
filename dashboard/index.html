@@ -59,6 +59,11 @@ header .title{grid-area:title}
 #spend-chip.over{color:var(--bad)}.pp-sec .field{width:100%;margin-top:8px}.pp-topic{font:600 15px var(--mono);word-break:break-all;margin:6px 0;color:var(--ink)}
 .qr-big{width:min(300px,100%);aspect-ratio:1;border-radius:14px;overflow:hidden;background:#fff;margin:6px auto 12px}.qr-big svg{width:100%;height:100%;display:block}
 .qr-pin{font:600 38px var(--mono);letter-spacing:.3em;text-align:center;margin:4px 0 2px}.qr-sub{text-align:center;color:var(--ink-2);margin:4px 0}
+.cx-warn{border:1px solid var(--owner);background:var(--owner-dim);border-radius:var(--r);padding:10px 12px;margin:10px 0;color:var(--ink)}
+.cx-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:6px 12px;align-items:center;padding:10px 0;border-bottom:1px solid var(--line)}
+.cx-row .n{font-weight:500;overflow:hidden;text-overflow:ellipsis}.cx-row .m{grid-column:1/-1;color:var(--mute);font-size:12px}
+.cx-ok{color:var(--signal)}.cx-bad{color:var(--owner)}.cx-skill{display:grid;grid-template-columns:auto minmax(0,1fr);gap:4px 10px;padding:8px 0;border-bottom:1px solid var(--line)}
+.cx-skill .d{color:var(--mute);font-size:12px;grid-column:2}.cx-grp{margin:16px 0 4px}
 .preset-row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}.preset-row select{flex:1 1 180px;min-width:0}
 .title{min-width:0}
 .title h1{margin:4px 0 0;font-size:22px;font-weight:500;letter-spacing:-.01em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -317,7 +322,7 @@ td.num{white-space:nowrap}
 @media (max-width:640px){.wrap{padding:16px}.rail{grid-template-columns:repeat(2,minmax(0,1fr))!important}}
 @media (max-width:640px){#cards-table th:nth-child(n+4),#cards-table td:nth-child(n+4){display:none}#cards-table th,#cards-table td{padding-left:12px;padding-right:12px}}
 /* phone view: what only the computer may do is hidden (the server refuses it as well) */
-body.remote #qr-btn, body.remote #skills-btn, body.remote #always-btn, body.remote #new-run, body.remote #deploy, body.remote #myapp, body.remote #g-open, body.remote #clock{display:none!important}
+body.remote #qr-btn, body.remote #conn-btn, body.remote #skills-btn, body.remote #always-btn, body.remote #new-run, body.remote #deploy, body.remote #myapp, body.remote #g-open, body.remote #clock{display:none!important}
 @media (max-width:820px){header{grid-template-columns:minmax(0,1fr);grid-template-areas:"brand" "hud" "title"}.hud{justify-content:flex-start}.hud select{max-width:100%;min-width:0;flex:1 1 180px}}
 #phone-btn .dot{display:inline-block;margin-left:8px;background:var(--signal);box-shadow:0 0 8px var(--signal)}
 .pp-sec{border:1px solid var(--line);border-radius:var(--r);padding:16px;margin:14px 0;background:var(--panel)}
@@ -345,6 +350,7 @@ body.remote #qr-btn, body.remote #skills-btn, body.remote #always-btn, body.remo
       <span class="chip" title="The driver is the process that runs the agents for this run"><span class="dot" id="gw-dot"></span>driver</span>
       <button class="btn" id="qr-btn" title="Show a QR code that opens this dashboard on your phone (same Wi-Fi)">Phone QR</button>
       <button class="btn" id="phone-btn" title="Phone view and keep-awake">Phone &amp; power<span class="dot" id="pp-dot" hidden></span></button>
+      <button class="btn" id="conn-btn" title="The connectors and skills from your own agent, and which factory agents may use them">Connections</button>
       <button class="btn" id="skills-btn">Skills</button>
       <button class="btn" id="always-btn">Always-use docs</button>
       <button class="btn go" id="new-run">New run</button>
@@ -636,7 +642,7 @@ function renderAsk() {
   if (box.dataset.gid === g.id && !box.hidden) { updateCountdown(); return; } // don't wipe a half-typed note
   box.hidden = false; box.dataset.gid = g.id;
   const tag = {ideas: "Your choice", mode: "Decider", spec: "Check the spec", review: "Your review", help: "Needs help", budget: "Budget"}[g.kind] || "Owner gate";
-  let h = `<div class="ph"><h2>Needs you</h2><span class="micro" style="color:var(--owner)">${tag}</span></div><div class="body"><h3>${esc(g.title)}</h3><p>${esc(g.blurb || "")}</p>`;
+  let h = `<div class="ph"><h2>Needs you</h2><span class="micro" style="color:var(--owner)">${tag}</span></div><div class="body"><h3>${esc(g.title)}</h3><p>${esc(g.blurb || "")}</p>${S.driver === false ? `<p class="micro" style="color:var(--owner)">This run's driver isn't running. When you answer, it starts again to act on your answer.</p>` : ""}<div class="micro" id="g-sent" style="color:var(--signal)"></div>`;
   if (g.images && g.images.length) h += `<div class="thumbs">${g.images.map(p => `<img class="thumb" src="${fileUrl("factory/" + p)}" data-src="${fileUrl("factory/" + p)}" data-name="${esc(p.split("/").pop())}" alt="${esc(p)}">`).join("")}</div>`;
   if (g.kind === "ideas") h += `<div class="opts">${(g.options || []).map((o, i) => `<div class="opt"><div class="t"><b>${esc(o.title)}</b><span class="p">${esc(o.pitch)}</span><span class="micro">${esc(o.size || "")} · ${o.has_ui === false ? "no screens" : "has screens"}</span></div><button class="btn" data-idx="${i}">Choose this</button></div>`).join("")}</div>`;
   if (g.kind === "mode" && g.decision) { const e = g.decision.estimates || {}; const f = m => e[m] ? `$${e[m].usd[0]}–${e[m].usd[1]} · ${e[m].minutes[0]}–${e[m].minutes[1]} min` : ""; h += `<p class="micro">single agent ${f("single")}<br>full pipeline ${f("multi")}</p><div class="cd" id="cd"></div>`; }
@@ -675,8 +681,14 @@ async function post(url, body) {
   return j;
 }
 async function send(payload, btn) {
-  if (btn) btn.disabled = true; const err = $("#g-err"); if (err) err.textContent = "";
-  try { await post("/api/decide", {run: S.run.id, ...payload}); $("#ask").dataset.gid = ""; }
+  if (btn) btn.disabled = true; const err = $("#g-err"), sent = $("#g-sent"); if (err) err.textContent = "";
+  try {
+    const r = await post("/api/decide", {run: S.run.id, ...payload});
+    if (sent) sent.textContent = r.resumed ? "Answer saved. This run's driver wasn't running, so it is starting again to act on it…" : "Answer saved. Waiting for the run to pick it up…";
+    // (the panel stays as it is until the run moves past this gate, so the message below isn't wiped by the next refresh)
+    // never leave the button dead: if nothing has happened after a while, say so and let them try again
+    setTimeout(() => { if (btn && btn.isConnected) { btn.disabled = false; const s = $("#g-sent"); if (s) s.textContent = "Still waiting for the run to pick up your answer. Look at the Factory console below for what it is doing, or press Resume run."; } }, 30000);
+  }
   catch (e) { if (err) err.textContent = e.message; if (btn) btn.disabled = false; }
 }
 
@@ -1065,6 +1077,52 @@ async function renderPhone() {
   act("#ph-new", () => post("/api/remote", {on: true, rotate: true}), "#ph-err");
   act("#ph-off", () => post("/api/remote", {on: false}), "#ph-err");
 }
+/* ---- Connections: the connectors and skills your own agent has, and which factory agents may use them ---- */
+async function openConnections(fresh) {
+  openDrawer("your agent", "Connections", `<div id="cx"><p class="hint">Reading what your agent has…</p></div>`);
+  let filter = "";
+  const load = async f => fetch("/api/connections" + (f ? "?fresh=1" : "")).then(r => r.json());
+  const show = j => {
+    const box = $("#cx"); if (!box) return;
+    const body = $("#d-body"), top = body.scrollTop, hadFocus = document.activeElement && document.activeElement.id === "cx-filter";
+    const eng = j.engine.label || j.engine.name;
+    const conn = j.connectors.map(c => {
+      const status = `<span class="${c.connected ? "cx-ok" : "cx-bad"}">${esc(c.status.replace(/^\W+/, ""))}</span>`;
+      if (c.enforced) return `<div class="cx-row"><span class="n">${esc(c.name)}</span><select data-conn="${esc(c.name)}" aria-label="Who may use ${esc(c.name)}">${Object.entries(j.scopes).map(([k, v]) => `<option value="${k}"${c.scope === k ? " selected" : ""}>${esc(v)}</option>`).join("")}</select><span class="m">${esc(c.agent_label)} · ${status}${c.where ? " · " + esc(c.where) : ""}</span></div>`;
+      const why = c.on_engine ? `${esc(eng)} gives all of its connectors to every agent here; the factory can't limit them one by one.` : `Configured in ${esc(c.agent_label)}. The factory runs on ${esc(eng)}, so it can't use this one: add it to ${esc(eng)} to use it.`;
+      return `<div class="cx-row"><span class="n">${esc(c.name)}</span><span class="micro">${c.on_engine ? "always on" : "not available"}</span><span class="m">${esc(c.agent_label)} · ${status}${c.where ? " · " + esc(c.where) : ""} · ${why}</span></div>`;
+    }).join("") || `<p class="hint">No connectors found in your agent.</p>`;
+    const fl = filter.trim().toLowerCase();
+    const shown = j.skills.filter(s => !fl || (s.name + " " + s.description + " " + s.agent).toLowerCase().includes(fl));
+    const groupOf = s => s.agent.startsWith("Claude plugin") ? "Claude plugins" : s.agent;   // one heading, not one per plugin
+    const groups = {}; shown.forEach(s => (groups[groupOf(s)] = groups[groupOf(s)] || []).push(s));
+    const skills = Object.keys(groups).sort().map(g => `<div class="cx-grp micro">${esc(g)} (${groups[g].length})</div>` + groups[g].map(s =>
+      `<label class="cx-skill"><input type="checkbox" data-skill="${esc(s.name)}"${s.enabled ? " checked" : ""}><b>${esc(s.name)}</b><span class="d">${s.agent.startsWith("Claude plugin: ") ? esc(s.agent.slice(15)) + " · " : ""}${esc((s.description || "no description").slice(0, 150))}</span></label>`).join("")).join("") || `<p class="hint">No skills match.</p>`;
+    box.innerHTML = `<p class="hint" style="margin:14px 0">Everything ${esc(eng)} already has, in one place. Nothing is copied: add a connector or skill in your agent and it shows up here by itself.</p>
+      <h3 style="margin:18px 0 4px">Connectors <span class="micro">(${j.connectors.length})</span></h3>
+      <div class="cx-warn">Off by default. A connector's tools can do whatever the connector can (a mail connector can send mail). Only switch on ones you are happy for an unattended agent to use. Agents are told to read and look things up only, and never to send, post, buy or delete.</div>
+      <div class="pp-row" style="margin:0 0 6px"><button class="btn" id="cx-refresh">Check connections again</button></div>${conn}
+      <h3 style="margin:26px 0 4px">Skills <span class="micro">(${j.skills.filter(s => s.enabled).length} of ${j.skills.length} on)</span></h3>
+      <p class="hint">The skill agent only picks skills that are ticked. It still judges, for each project, which ones actually fit. <a id="cx-library">Your own skills library</a></p>
+      <input class="fld" id="cx-filter" placeholder="Filter skills" value="${esc(filter)}" style="margin:6px 0">${skills}
+      <h3 style="margin:26px 0 4px">Add a skills folder</h3>
+      <p class="hint">Use another agent's skills (a folder that contains skill folders, each with a SKILL.md). Paste its path.</p>
+      <div class="preset-row"><input class="fld" id="cx-folder" placeholder="e.g. C:/Users/you/.grok/skills" style="flex:1 1 220px;min-width:0"><button class="btn" id="cx-addfolder">Add folder</button></div>
+      ${j.skill_folders.map(f => `<div class="cx-row"><span class="n mono">${esc(f)}</span><button class="btn warn" data-rmfolder="${esc(f)}">Remove</button></div>`).join("")}
+      <div class="err" id="cx-err"></div>`;
+    const err = m => { const e = $("#cx-err"); if (e) e.textContent = m; };
+    $("#cx-refresh").onclick = async e => { e.target.disabled = true; e.target.textContent = "Checking…"; show(await load(true)); };
+    $("#cx-library").onclick = openSkills;
+    $("#cx-filter").oninput = e => { filter = e.target.value; show(j); };
+    $("#cx-addfolder").onclick = async () => { try { show(await post("/api/connections/folder", {path: $("#cx-folder").value})); } catch (e) { err(e.message); } };
+    box.querySelectorAll("[data-rmfolder]").forEach(b => b.onclick = async () => { try { show(await post("/api/connections/folder", {path: b.dataset.rmfolder, remove: true})); } catch (e) { err(e.message); } });
+    box.querySelectorAll("select[data-conn]").forEach(s => s.onchange = async () => { try { await post("/api/connections/access", {name: s.dataset.conn, scope: s.value}); err(""); } catch (e) { err(e.message); } });
+    box.querySelectorAll("input[data-skill]").forEach(c => c.onchange = async () => { try { const r = await post("/api/connections/skill", {name: c.dataset.skill, enabled: c.checked}); j.skills = r.skills; j.skill_folders = r.skill_folders; err(""); } catch (e) { err(e.message); c.checked = !c.checked; } });
+    body.scrollTop = top;
+    if (hadFocus) { const f = $("#cx-filter"); f.focus(); f.setSelectionRange(f.value.length, f.value.length); }
+  };
+  try { show(await load(fresh)); } catch (e) { $("#cx").innerHTML = `<p class="err">${esc(e.message)}</p>`; }
+}
 let qrTimer = null, qrSig = "";
 async function openQR() {
   openDrawer("this computer", "Phone QR", `<div id="qrbox"><p class="hint">Getting your QR code…</p></div>`);
@@ -1101,6 +1159,7 @@ function openPhone() {
 }
 $("#phone-btn").onclick = openPhone;
 $("#qr-btn").onclick = openQR;
+$("#conn-btn").onclick = () => openConnections(false);
 ppStatus();
 setInterval(ppStatus, 15000);
 $("#skills-btn").onclick = openSkills;

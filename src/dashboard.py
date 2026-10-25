@@ -32,6 +32,7 @@ import webbrowser
 import awake
 import checks
 import common
+import connections
 import deploy
 import factory
 import keys
@@ -342,6 +343,19 @@ def act(path: str, body: dict) -> tuple[int, dict]:
             return 200, AWAKE.start(str(body.get("mode") or "runs"), float(body.get("hours") or 2)) if body.get("on") else AWAKE.stop()
         except (RuntimeError, ValueError) as e:
             return 400, {"error": str(e)}
+    if path in ("/api/connections/access", "/api/connections/skill", "/api/connections/folder"):   # this computer only
+        try:
+            if path.endswith("access"):
+                connections.set_access(str(body.get("name", "")), str(body.get("scope", "")))
+            elif path.endswith("skill"):
+                connections.set_skill_enabled(str(body.get("name", "")), bool(body.get("enabled")))
+            elif body.get("remove"):
+                connections.remove_skill_folder(str(body.get("path", "")))
+            else:
+                connections.add_skill_folder(str(body.get("path", "")))
+        except ValueError as e:
+            return 400, {"error": str(e)}
+        return 200, connections_snapshot()
     if path == "/api/install-app":   # open by typing the name (this computer only)
         where = "desktop" if body.get("where") == "desktop" else "menu"
         try:
@@ -436,8 +450,22 @@ def act(path: str, body: dict) -> tuple[int, dict]:
             factory.write_decision(rd, decision, fb, body.get("note") or "", int(index) if index is not None else None)
         except SystemExit as e:
             return 409, {"error": str(e)}
-        return 200, {"ok": True}
+        return 200, {"ok": True, "resumed": resume_for_answer(rd)}
     return 404, {"error": "not found"}
+
+
+RESUMED_AT: dict[str, float] = {}
+
+
+def resume_for_answer(rd: Path) -> bool:
+    """The owner just answered a gate. If no driver is running to read the answer (the computer slept or restarted, or the run
+    is from an earlier session), start it again: otherwise the click is saved but nothing ever happens. Returns whether it did.
+    A second click within 40 seconds does not start a second driver."""
+    if driver_alive(rd) or time.time() - RESUMED_AT.get(rd.name, 0) < 40:
+        return False
+    RESUMED_AT[rd.name] = time.time()
+    spawn_driver(rd.name)
+    return True
 
 
 # --------------------------------------------------------------------------- keep awake and phone view
@@ -454,6 +482,13 @@ def any_run_active() -> bool:
 
 
 AWAKE = awake.KeepAwake(busy=any_run_active)
+
+
+def connections_snapshot(fresh: bool = False) -> dict:
+    snap = connections.snapshot(fresh)
+    snap["skills"] = checks.skill_catalog(include_disabled=True)
+    snap["skill_folders"] = connections.skill_settings()["folders"]
+    return snap
 
 
 def push_status() -> dict:
@@ -586,6 +621,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._json({"presets": presets.load(common.WORKSPACE)})
         if url.path == "/api/push":
             return self._json(push_status())
+        if url.path == "/api/connections":   # connectors and skills from your own agent(s); local only
+            return self._json(connections_snapshot(fresh=qs.get("fresh") == "1"))
         if url.path == "/api/state":
             return self._json(snapshot(run))
         if url.path == "/api/doc":

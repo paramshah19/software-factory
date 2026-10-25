@@ -35,6 +35,7 @@ def site(tmp_path, monkeypatch):
         url = f"http://127.0.0.1:{srv.server_address[1]}"
         runs = tmp_path / "runs"
         always = tmp_path / "always"
+        started_drivers = spawned   # run ids whose driver the dashboard started again
 
         def make(self, mode="single", gate=None, status="gate", **over):
             rd = factory.create_run("a tiny tool", self.runs)
@@ -277,3 +278,46 @@ def test_phone_qr_button_shows_the_qr_code_in_one_click_and_can_turn_it_off(site
         assert not dashboard.PHONE.on
     finally:
         dashboard.PHONE.stop()
+
+
+def test_connections_panel_lists_connectors_and_skills_and_saves_choices(site, page, monkeypatch, tmp_path):
+    import connections
+    home = tmp_path / "home"
+    (home / ".claude" / "skills" / "alpha-skill").mkdir(parents=True)
+    (home / ".claude" / "skills" / "alpha-skill" / "SKILL.md").write_text("---\nname: alpha-skill\ndescription: does alpha things\n---\n", encoding="utf-8")
+    monkeypatch.setattr(Path, "home", staticmethod(lambda: home))
+    rows = [{"id": "claude:claude.ai Figma", "name": "claude.ai Figma", "agent": "claude", "agent_label": "Claude Code", "kind": "remote", "where": "",
+             "status": "\u2714 Connected", "connected": True, "on_engine": True, "scope": "off", "enforced": True},
+            {"id": "gemini:docs", "name": "docs", "agent": "gemini", "agent_label": "Gemini CLI", "kind": "remote", "where": "docs.example.com",
+             "status": "configured", "connected": True, "on_engine": False, "scope": "off", "enforced": False}]
+    monkeypatch.setattr(connections, "discover", lambda fresh=False, **k: [dict(r, scope=connections.access().get(r["name"], "off")) if r["enforced"] else r for r in rows])
+    site.make(gate=None, status="running")
+    page.goto(site.url + "/")
+    page.click("#conn-btn")
+    page.wait_for_selector("select[data-conn]", timeout=10000)
+    assert page.inner_text("#cx").count("claude.ai Figma") == 1 and "Configured in Gemini CLI" in page.inner_text("#cx")
+    assert "Off by default" in page.inner_text(".cx-warn")
+    page.select_option("select[data-conn]", "build")
+    page.wait_for_timeout(500)
+    assert connections.allow_for("sf-builder") == ("mcp__claude_ai_Figma",) and connections.allow_for("sf-researcher") == ()
+    page.fill("#cx-filter", "alpha")
+    page.wait_for_selector("input[data-skill='alpha-skill']")
+    assert page.is_checked("input[data-skill='alpha-skill']")
+    page.uncheck("input[data-skill='alpha-skill']")
+    page.wait_for_timeout(500)
+    assert "alpha-skill" not in checks.list_skills()
+    assert page.inner_text("#cx").count("Claude Code") >= 1 and not page.evaluate("document.documentElement.scrollWidth > innerWidth")
+    assert not [e for e in page.errors if "favicon" not in e]
+
+
+def test_answering_a_gate_whose_driver_is_not_running_says_so_and_restarts_it(site, page):
+    """The buttons used to look dead: the answer was saved, but nothing was running to read it."""
+    dashboard.RESUMED_AT.clear()
+    rd = site.make(gate=gate("review", ["approve", "improve", "escalate"]), status="gate", heartbeat=time.time() - 3600)
+    page.goto(site.url + "/")
+    page.wait_for_selector("#ask:not([hidden])")
+    assert "driver isn't running" in page.inner_text("#ask").lower()
+    page.click("button[data-d='approve']")
+    page.wait_for_function("(document.querySelector('#g-sent') || {}).textContent && document.querySelector('#g-sent').textContent.includes('starting again')", timeout=10000)
+    assert site.decision(rd)["decision"] == "approve" and site.started_drivers == [rd.name]
+    assert not page.errors

@@ -560,13 +560,18 @@ def test_ideas_gate_only_accepts_choose_or_random(tmp_path, browser):
     t = threading.Thread(target=run.execute, daemon=True)
     t.start()
     deadline = time.time() + 30
-    while not (run.state.get("gate") or {}).get("kind") == "ideas" and time.time() < deadline:
+    # wait until the gate is on DISK, which is what the CLI and the dashboard (write_decision) read: the driver sets it in memory a moment earlier
+    while not (factory.load_state(run.rd).get("gate") or {}).get("kind") == "ideas" and time.time() < deadline:
         time.sleep(0.05)
     with pytest.raises(SystemExit):
         factory.write_decision(run.rd, "approve")
     assert len(run.state["gate"]["options"]) == 5
     factory.write_decision(run.rd, "random")
-    t.join(120)
+    for _ in range(200):   # the driver picks the answer up and moves on; the rest of the run needs more answers than this test gives, so don't wait for it to finish
+        if (run.state.get("gate") or {}).get("kind") != "ideas":
+            break
+        time.sleep(0.05)
+    assert (run.state.get("gate") or {}).get("kind") != "ideas"
 
 
 def test_simple_idea_skips_the_intake_agent_but_extras_use_it(tmp_path, browser):
@@ -907,6 +912,52 @@ def test_resume_skips_finished_stages(tmp_path, browser):
     run2.reset_stages(["review"])
     assert drive(run2) == []
     assert len(agents.calls) == before and run2.state["status"] == "done"
+
+
+def test_resuming_a_run_made_before_the_skills_step_goes_straight_to_the_gate(tmp_path, browser):
+    """A run an older version made has no skills step. Resuming it (to read the owner's saved answer) must not add that step:
+    it runs an agent and spends money before the run ever reaches the gate it was waiting at."""
+    agents = FakeAgents()
+    run = make_run(tmp_path, agents)
+    assert drive(run) == []
+    assert run.state["stages"]["skills"]["state"] == "done"
+    state = json.loads((run.rd / "state.json").read_text(encoding="utf-8"))
+    state["stages"].pop("skills")                                   # as the older version left it
+    state["rail"] = [e for e in state["rail"] if e["key"] != "skills"]
+    (run.rd / "state.json").write_text(json.dumps(state), encoding="utf-8")
+    before = len(agents.calls)
+    run2 = Run(run.rd, agent=agents)
+    run2.test_cmd, run2.holdout_cmd, run2.poll, run2.decider_wait = PYTEST, PYTEST, 0.05, 0
+    run2.reset_stages(["review"])
+    assert drive(run2) == []
+    assert len(agents.calls) == before, f"resume ran agents: {agents.names()[before:]}"
+    assert run2.state["stages"]["skills"]["state"] == "done" and "added later" in run2.state["stages"]["skills"]["detail"]
+    assert run2.state["status"] == "done"
+
+
+def test_an_answer_saved_while_the_driver_was_dead_still_counts_after_a_restart(tmp_path, browser):
+    """The owner clicked Approve, the click was saved, but the run's driver had died. Starting the driver again must pick up that
+    same gate and that answer (it used to open a new gate and throw the answer away, so the owner had to click again)."""
+    agents = FakeAgents()
+    run = make_run(tmp_path, agents)
+    assert drive(run) == []
+    state = json.loads((run.rd / "state.json").read_text(encoding="utf-8"))
+    gate_card = next(c for c in state["cards"] if c["kind"] == "gate" and c["stage"] == "review")
+    gate_card.update(state="owner", status="waiting for you")
+    state["stages"]["review"]["state"] = "owner"
+    state["status"], state["heartbeat"] = "gate", time.time() - 3600
+    state["gate"] = {"id": gate_card["id"], "kind": "review", "title": "Review the app", "blurb": "", "doc": "report.md", "accept": ["approve", "improve", "escalate"],
+                     "options": None, "deadline": None, "images": []}
+    (run.rd / "state.json").write_text(json.dumps(state), encoding="utf-8")
+    (run.rd / "decision.json").write_text(json.dumps({"gate": gate_card["id"], "decision": "approve", "feedback": "", "note": ""}), encoding="utf-8")
+    before = len(agents.calls)
+    run2 = Run(run.rd, agent=agents)
+    run2.test_cmd, run2.holdout_cmd, run2.poll, run2.decider_wait = PYTEST, PYTEST, 0.05, 0
+    assert drive(run2, {"review": None}) == []           # nobody answers during this restart: the saved answer has to be enough
+    assert run2.state["status"] == "done" and run2.state["gate"] is None
+    assert len(agents.calls) == before, f"the restart ran agents: {agents.names()[before:]}"
+    assert [c["id"] for c in run2.state["cards"] if c["kind"] == "gate" and c["stage"] == "review"] == [gate_card["id"]]   # no second review gate
+    assert not (run.rd / "decision.json").exists()
 
 
 # --------------------------------------------------------------------------- the troubleshooter

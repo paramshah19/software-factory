@@ -202,3 +202,29 @@ def test_open_works_for_apps_with_screens_only(tmp_path, monkeypatch):
     assert dashboard.act("/api/open", {"run": rd.name})[0] == 404
     (rd / "factory" / "app.json").write_text(json.dumps({"type": "static", "entry": "../../x.html", "screens": []}), encoding="utf-8")
     assert dashboard.act("/api/open", {"run": rd.name})[0] == 404
+
+
+def test_answering_a_gate_restarts_a_driver_that_is_not_running(tmp_path, monkeypatch):
+    """The click used to be saved and then nothing happened (the run's driver had died). Now the answer starts it again."""
+    monkeypatch.setattr(factory, "RUNS_DIR", tmp_path)
+    started = []
+    monkeypatch.setattr(dashboard, "spawn_driver", lambda run_id: started.append(run_id))
+    dashboard.RESUMED_AT.clear()
+    gate = {"id": "gate-review-1", "kind": "review", "title": "Review", "blurb": "", "doc": None, "accept": ["approve", "improve"], "options": None, "deadline": None, "images": []}
+    rd = make_run(tmp_path, status="gate", gate=gate, heartbeat=time.time() - 3600)      # the driver stopped an hour ago
+    code, body = dashboard.act("/api/decide", {"run": rd.name, "decision": "approve"})
+    assert code == 200 and body == {"ok": True, "resumed": True} and started == [rd.name]
+    assert json.loads((rd / "decision.json").read_text(encoding="utf-8"))["decision"] == "approve"
+    code, body = dashboard.act("/api/decide", {"run": rd.name, "decision": "approve"})     # a second click does not start a second driver
+    assert code == 200 and body["resumed"] is False and started == [rd.name]
+
+
+def test_answering_a_gate_does_not_restart_a_driver_that_is_running(tmp_path, monkeypatch):
+    monkeypatch.setattr(factory, "RUNS_DIR", tmp_path)
+    started = []
+    monkeypatch.setattr(dashboard, "spawn_driver", lambda run_id: started.append(run_id))
+    dashboard.RESUMED_AT.clear()
+    gate = {"id": "gate-review-1", "kind": "review", "title": "Review", "blurb": "", "doc": None, "accept": ["approve"], "options": None, "deadline": None, "images": []}
+    rd = make_run(tmp_path, status="gate", gate=gate, heartbeat=time.time())
+    assert dashboard.act("/api/approve", {"run": rd.name}) == (200, {"ok": True, "resumed": False}) and started == []
+    assert dashboard.act("/api/decide", {"run": "nope", "decision": "approve"})[0] == 404

@@ -266,9 +266,40 @@ MAX_SKILL_FILES, MAX_SKILL_FILE_BYTES, MAX_SKILL_TOTAL_BYTES = 200, 2_000_000, 8
 def skill_sources() -> list[tuple[Path, str]]:
     """Where skills live on this machine: your library first, then installed, workspace and project skills."""
     home = Path.home()
-    return [(SKILLS_LIBRARY, "yours"), (home / ".claude" / "skills", "installed"), (home / ".agents" / "skills", "installed"),
-            (home / ".codex" / "skills", "installed"), (ROOT.parent.parent / ".claude" / "skills", "workspace"),
-            (ROOT / ".claude" / "skills", "project")]
+    rows = [(SKILLS_LIBRARY, "yours"), (home / ".claude" / "skills", "installed"), (home / ".agents" / "skills", "installed"),
+            (home / ".codex" / "skills", "installed"), (home / ".gemini" / "skills", "installed"), (home / ".cursor" / "skills", "installed"),
+            (home / ".config" / "opencode" / "skills", "installed"), (home / ".config" / "opencode" / "skill", "installed"),
+            (ROOT.parent.parent / ".claude" / "skills", "workspace"), (ROOT / ".claude" / "skills", "project")]
+    rows += [(Path(f).expanduser(), "folder") for f in _skill_settings()["folders"]]   # folders you added (another agent's, say)
+    return rows
+
+
+def _skill_settings() -> dict:
+    """{disabled: [names], folders: [paths]} from your settings. Late import: engines needs this module's neighbours."""
+    import engines
+    cfg = engines.load_config().get("skills")
+    cfg = cfg if isinstance(cfg, dict) else {}
+    return {"disabled": [x for x in cfg.get("disabled", []) if isinstance(x, str)], "folders": [x for x in cfg.get("folders", []) if isinstance(x, str)]}
+
+
+def skill_agent(path: Path) -> str:
+    """Which agent a skill came from, in plain words, for the Connections panel."""
+    p = Path(path).as_posix()
+    home = Path.home().as_posix()
+    for prefix, label in ((SKILLS_LIBRARY.as_posix(), "Your library"), (home + "/.claude/skills", "Claude Code"), (home + "/.codex/skills", "Codex"),
+                          (home + "/.agents/skills", "Shared agent skills (Codex and others)"), (home + "/.gemini/skills", "Gemini CLI"),
+                          (home + "/.cursor/skills", "Cursor"), (home + "/.config/opencode", "opencode"), (ROOT.as_posix(), "This project")):
+        if p.startswith(prefix + "/"):
+            return label
+    if "/.claude/plugins/" in p:   # .../<plugin>/[<version>/]skills/<skill>/SKILL.md
+        owner = Path(path).parent.parent.parent
+        if re.fullmatch(r"v?\d[\w.+-]*", owner.name):
+            owner = owner.parent
+        return f"Claude plugin: {owner.name}"
+    for f in _skill_settings()["folders"]:
+        if p.startswith(Path(f).expanduser().as_posix() + "/"):
+            return f"Folder: {Path(f).name}"
+    return "This workspace"
 
 
 def skill_roots() -> list[Path]:
@@ -316,20 +347,22 @@ def _plugin_skill_files():
                 yield Path(dirpath) / "SKILL.md"
 
 
-def skill_catalog() -> list[dict]:
-    """Every skill the agents could use: [{name, description, source, path}]. Your library wins on a name clash."""
+def skill_catalog(include_disabled: bool = False) -> list[dict]:
+    """Every skill the agents could use: [{name, description, source, agent, enabled, path}]. Your library wins on a name clash.
+    Skills you switched off in the Connections panel are left out unless include_disabled (the panel itself)."""
     seen: dict[str, dict] = {}
+    disabled = set(_skill_settings()["disabled"])
 
     def add(path: Path, source: str):
         name = path.parent.name
-        if name in seen:
+        if name in seen or (name in disabled and not include_disabled):
             return
         try:
             text = path.read_text(encoding="utf-8", errors="replace")
         except OSError:
             return
         _, desc = parse_skill_meta(text, name)
-        seen[name] = {"name": name, "description": desc, "source": source, "path": str(path)}
+        seen[name] = {"name": name, "description": desc, "source": source, "agent": skill_agent(path), "enabled": name not in disabled, "path": str(path)}
     for root, source in skill_sources():
         if root.is_dir():
             for p in sorted(root.glob("*/SKILL.md")):
@@ -347,6 +380,8 @@ def find_skill(name: str) -> Optional[Path]:
     if not re.fullmatch(r"[A-Za-z0-9_.:-]+", name):
         return None
     name = name.split(":")[-1]
+    if name in _skill_settings()["disabled"]:   # switched off in the Connections panel
+        return None
     for root in skill_roots():
         cand = root / name / "SKILL.md"
         if cand.exists():

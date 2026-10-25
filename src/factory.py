@@ -43,6 +43,7 @@ from common import (AGENTS_DIR, NO_WINDOW, WORKSPACE, Role, StageFailed, failing
 import checks  # noqa: E402
 import cleanup  # noqa: E402
 import common  # noqa: E402
+import connections  # noqa: E402
 import push  # noqa: E402
 import spend  # noqa: E402
 import engines  # noqa: E402
@@ -239,7 +240,7 @@ def run_claude(run: "Run", card_id: str, role: Role, prompt: str, cwd: Path, esc
     pdir = run.rd / "logs" / "prompts"
     pdir.mkdir(parents=True, exist_ok=True)
     pfile = pdir / f"{card_id}.md"
-    system_text = protocol_text(role.name) + "\n\n---\n\n" + role.body + run.system_extras(role.name)
+    system_text = protocol_text(role.name) + "\n\n---\n\n" + role.body + run.system_extras(role.name) + connections.prompt_note(role.name)
     log = run.rd / "logs" / f"{card_id}.log"
     raw = run.rd / "logs" / f"{card_id}.jsonl"
     eng = engines.current()
@@ -254,9 +255,10 @@ def run_claude(run: "Run", card_id: str, role: Role, prompt: str, cwd: Path, esc
     pfile.write_text(system_text, encoding="utf-8")
     run.card_update(card_id, model=model, effort=effort)
     note(f"──── {role.name} · {model} · effort {effort}" + (" · retry" if escalate else ""))
-    proc = subprocess.Popen(claude_cmd(role, model, effort, run.rd, pfile, tuple(getattr(run, "extra_allow", ()))), cwd=str(cwd), stdin=subprocess.PIPE,
+    allowed = tuple(getattr(run, "extra_allow", ())) + connections.allow_for(role.name)  # the deployer's connector, plus any the owner gave this agent
+    proc = subprocess.Popen(claude_cmd(role, model, effort, run.rd, pfile, allowed), cwd=str(cwd), stdin=subprocess.PIPE,
                             stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, encoding="utf-8",
-                            errors="replace", env=_agent_env(run.rd, bool(getattr(run, "extra_allow", ()))), creationflags=NO_WINDOW)
+                            errors="replace", env=_agent_env(run.rd, bool(allowed)), creationflags=NO_WINDOW)
     timer = threading.Timer(role.timeout_min * 60, lambda: (note("✗ timed out, killing"), _kill_tree(proc)))
     timer.start()
     err_buf: list[str] = []
@@ -752,6 +754,11 @@ class Run(PipelineMixin):
         """Stop and wait for the owner. `accept` lists the decisions that count; with `auto_seconds` the gate approves itself."""
         t0, b0 = gate_blurb(kind)
         title, blurb = title or t0, blurb or b0
+        left, self.left_gate = getattr(self, "left_gate", None), None
+        if left and left.get("kind") == kind and left.get("id"):
+            # the driver that opened this gate died (sleep, restart) and this one is picking the run up again: keep the SAME gate, so an
+            # answer the owner already saved for it still counts, instead of opening a new gate and throwing that answer away
+            card_id = left["id"]
         self.add_card(card_id, f"OWNER GATE — {title}", None, "gate", stage_key)
         deadline = (time.time() + auto_seconds) if auto_seconds else None
         with self.lock:
@@ -1023,6 +1030,7 @@ class Run(PipelineMixin):
             for k, s in self.state["stages"].items():
                 if s["state"] in ("active", "blocked", "owner"):
                     s["state"] = "pending"
+            self.left_gate = self.state.get("gate")   # the gate that was open when the old driver died: gate() picks the same one up again
             self.state["gate"] = None
             self.save()
 
